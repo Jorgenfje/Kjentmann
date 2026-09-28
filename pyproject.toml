@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kjentmann"
+version = "0.1.0"
+description = "GPS-free visual positioning: find where an overhead image was taken by matching it against satellite imagery."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Jørgen Fjellstad" }]
+dependencies = [
+    "numpy>=1.26",
+    "rasterio>=1.3",
+    "pyproj>=3.6",
+    "shapely>=2.0",
+    "pystac-client>=0.7",
+    "pyyaml>=6.0",
+    "pillow>=10.0",
+    "folium>=0.15",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.5"]
+
+[project.scripts]
+kjentmann = "kjentmann.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Raised inside rasterio, not our code.
+filterwarnings = ["ignore:Use `@` matmul:PendingDeprecationWarning"]

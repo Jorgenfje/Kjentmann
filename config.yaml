@@ -1,0 +1,21 @@
+# Kjentmann configuration
+area:
+  name: askim
+  center_lat: 59.583
+  center_lon: 11.162
+  size_km: 20          # side length of the square map area
+
+imagery:
+  collection: sentinel-2-l2a
+  stac_url: https://earth-search.aws.element84.com/v1
+  date_from: "2025-06-01"
+  date_to: "2025-08-31"
+  max_cloud_cover: 5     # percent, whole scene
+  min_valid_fraction: 0.99  # reject scenes with no-data inside the area
+
+tiles:
+  size_px: 256         # 256 px x 10 m = 2.56 km per tile
+  overlap: 0.5         # 50 % overlap between neighbouring tiles
+
+paths:
+  data_dir: data
