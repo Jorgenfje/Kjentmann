@@ -147,3 +147,19 @@ def test_realistic_profile_end_to_end(prepared):
     assert summary["answered"] > 0.2
     assert summary["within_100m_of_answered"] > 0.8
     assert (cfg.results_dir / "refine_sift.md").exists()
+
+
+def test_coarse_candidates_without_augmentation_equals_plain_search(prepared):
+    from kjentmann.evaluate import build_index, load_images, read_tiles
+    from kjentmann.refine import coarse_candidates
+
+    tiles = read_tiles(prepared.tiles_csv)
+    imgs = load_images(prepared.tiles_dir, [t.tile_id for t in tiles])
+    emb = PixelEmbedder()
+    index = build_index(emb.embed(imgs))
+    plain = index.search(emb.embed(imgs[:6]), 5)[1]
+    got = coarse_candidates(emb, index, imgs[:6], 5)
+    assert (got[:, 0] == plain[:, 0]).all()
+    # With extra rotations each image still finds itself first.
+    got_tta = coarse_candidates(emb, index, imgs[:6], 5, rotations=(-15, 0, 15))
+    assert (got_tta[:, 0] == np.arange(6)).all()

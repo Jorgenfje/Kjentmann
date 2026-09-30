@@ -60,6 +60,11 @@ def main(argv: list[str] | None = None) -> None:
         help="test-image profile from config.yaml, e.g. easy or realistic (default: easy)",
     )
     parser.add_argument(
+        "--no-tta",
+        action="store_true",
+        help="refine without extra rotations/zooms (for comparison)",
+    )
+    parser.add_argument(
         "--no-pretrained",
         action="store_true",
         help="use random DINOv2 weights (testing only, no download)",
@@ -70,6 +75,10 @@ def main(argv: list[str] | None = None) -> None:
     from kjentmann.config import load_config
 
     cfg = load_config(args.config).with_profile(args.profile)
+    if args.no_tta:
+        from dataclasses import replace
+
+        cfg = replace(cfg, tta_rotations=(0.0,), tta_scales=(1.0,), fine_rotations=())
     for step in SHORTCUTS.get(args.command, [args.command]):
         run_step(step, cfg, args)
 

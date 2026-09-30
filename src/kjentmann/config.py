@@ -48,6 +48,9 @@ class Config:
     min_inliers: int = 15
     min_scale: float = 0.7
     max_scale: float = 1.4
+    tta_rotations: tuple = (0.0,)
+    tta_scales: tuple = (1.0,)
+    fine_rotations: tuple = ()
 
     # Reference map ---------------------------------------------------------
     @property
@@ -170,6 +173,9 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         min_inliers=int(ref.get("min_inliers", 15)),
         min_scale=float(ref.get("min_scale", 0.7)),
         max_scale=float(ref.get("max_scale", 1.4)),
+        tta_rotations=tuple(float(a) for a in ref.get("tta_rotations", [0])),
+        tta_scales=tuple(float(z) for z in ref.get("tta_zooms", [1])),
+        fine_rotations=tuple(float(a) for a in ref.get("fine_rotations", [])),
     )
     if not 0 <= cfg.tile_overlap < 1:
         raise ValueError("tiles.overlap must be in [0, 1)")

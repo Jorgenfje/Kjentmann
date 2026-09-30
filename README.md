@@ -43,6 +43,7 @@ Same 200 test images, now matched point by point against the 5 candidates.
 | Median error when answered | 1 m |
 | Within 100 m, of all images | 88% |
 | Wrong answers (> 500 m) | 0% |
+| Matching time per image (RTX 3050) | 0.34 s |
 
 When the system answers, it is right; the remaining 12% get "unknown" instead of a guess. No threshold between 8 and 50 matches produced a single wrong answer.
 
@@ -53,7 +54,9 @@ kjentmann queries --profile realistic
 kjentmann refine  --profile realistic
 ```
 
-*Realistic-profile results for Askim follow.*
+First realistic run, before searching over rotations: the system answered only 24% of images, but every answer was still within 100 m and none was wrong. The coarse search is the bottleneck: DINOv2 fingerprints change when an image is rotated, so the right tile often misses the top 5. The coarse search now also tries each image rotated ±15° and zoomed, and fine matching retries rotated when nothing fits. Compare with `--no-tta`.
+
+*Updated realistic-profile results follow.*
 
 The results map shows every test image where it was really taken: green if found first, orange if among the top 5, red if missed, with a line to the top guess.
 

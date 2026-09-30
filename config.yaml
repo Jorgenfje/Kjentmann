@@ -43,6 +43,12 @@ refine:
   min_inliers: 15       # fewer agreeing matches -> answer "unknown"
   min_scale: 0.7        # reject transforms with implausible scale
   max_scale: 1.4
+  # Coarse search tries each test image at these rotations and zooms and keeps
+  # each tile's best similarity (DINOv2 is sensitive to rotation and scale).
+  tta_rotations: [-15, 0, 15]
+  tta_zooms: [0.85, 1.0, 1.2]
+  # If no candidate reaches min_inliers, match again with the image rotated.
+  fine_rotations: [-15, 15]
 
 # Test-image profiles. 'easy' = plain crops (same sensor, north-up, same scale).
 # 'realistic' adds what a camera under an aircraft would see: some heading
