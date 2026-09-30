@@ -190,8 +190,7 @@ def evaluate(cfg: Config, embedders: list[Embedder]) -> list[dict]:
 def results_table(summaries: list[dict], k: int) -> str:
     """Markdown table for the README and LinkedIn."""
     lines = [
-        f"| Metode | Treff topp 1 | Treff topp {k} | Tilfeldig topp {k} "
-        "| Medianfeil topp 1 | ms per bilde |",
+        f"| Method | Hit @1 | Hit @{k} | Chance @{k} | Median error @1 | ms per image |",
         "|---|---|---|---|---|---|",
     ]
     for s in summaries:

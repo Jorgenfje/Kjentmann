@@ -1,21 +1,40 @@
 # Kjentmann
 
-**GPS-fri posisjonering med AI: finn ut hvor et bilde er tatt ved å sammenligne det med satellittbilder.**
+**GPS-free visual positioning: find where an overhead image was taken by matching it against satellite imagery.**
 
-GPS kan jammes og forfalskes. I Øst-Finnmark er det et daglig problem, og FFI anbefaler reserveløsninger for posisjonering. Et kamera som ser ned kan ikke jammes. Kjentmann kjenner igjen terrenget og gir en posisjon uten satellittsignaler.
+GNSS signals can be jammed and spoofed. In eastern Finnmark, Norway, interference is a daily problem, and the Norwegian Defence Research Establishment (FFI) recommends backup solutions for positioning. A downward-looking camera cannot be jammed. Kjentmann recognises the terrain and returns a position without any satellite signal.
 
-> Status: **v0.2**. Grovsøk med DINOv2 og FAISS, målt mot testbilder fra en annen dato. Presis posisjon kommer i v0.3.
+*A "kjentmann" is Norwegian for a local guide: someone who knows the terrain and finds the way without a map.*
 
-## Slik fungerer det
+> **Status: v0.2.** Coarse search with DINOv2 and FAISS, evaluated on test images from a different date. Precise positioning follows in v0.3.
 
-1. **Kart (én gang per område):** Et skyfritt Sentinel-2-bilde lastes ned og deles i overlappende ruter med kjent posisjon.
-2. **Fingeravtrykk (v0.2):** Hver rute gjøres om til en vektor med DINOv2 og legges i en FAISS-indeks.
-3. **Grovsøk (v0.2):** Et nytt bilde får sitt eget fingeravtrykk, og de 5 mest like rutene hentes.
-4. **Finmatching (v0.3):** LightGlue matcher punkter mot de beste rutene og gir posisjon i meter, med en sikkerhetsscore.
+## How it works
 
-## Kom i gang
+1. **Map (once per area):** A cloud-free Sentinel-2 image is downloaded and cut into overlapping tiles with known positions.
+2. **Fingerprints:** Each tile is turned into a vector with DINOv2 and stored in a FAISS index.
+3. **Coarse search:** A new image gets its own fingerprint, and the 5 most similar tiles are retrieved.
+4. **Fine matching (v0.3):** LightGlue matches keypoints against the best tiles and returns a position in metres with a confidence score. Low confidence returns "unknown" instead of a guess.
 
-Krever Python 3.10 eller nyere. Et NVIDIA-skjermkort gjør DINOv2 raskere, men er ikke nødvendig.
+## Results
+
+Test set: 200 crops from a Sentinel-2 image taken on a **different date** than the map, so light, shadows and vegetation differ. Crops are placed at random, independent of the tile grid. A search counts as a hit when a returned tile contains the true centre of the test image.
+
+| Method | Hit @1 | Hit @5 | Chance @5 | Median error @1 | ms per image |
+|---|---|---|---|---|---|
+| Raw pixels (baseline) | 12% | 28% | 9% | 7.70 km | <1 |
+| **DINOv2 ViT-S/14** | **46%** | **74%** | 9% | **1.82 km** | 58 |
+
+*Area: 20 × 20 km around Askim, Norway. 225 tiles of 2.56 × 2.56 km. 200 test images. GPU: NVIDIA RTX 3050. "Chance" is the exact hit rate of guessing 5 random tiles.*
+
+DINOv2 finds the right tile first almost four times as often as comparing raw pixels, and has the right answer among its top 5 for three out of four images, against 9% by chance. The misses tend to point at a few look-alike tiles; v0.3 adds geometric verification with LightGlue to reject those, and re-ranks the top 5.
+
+The results map shows every test image where it was really taken: green if found first, orange if among the top 5, red if missed, with a line to the top guess.
+
+Assumption: images are north-up. In a real system the heading comes from a compass.
+
+## Getting started
+
+Requires Python 3.10 or newer. An NVIDIA GPU makes DINOv2 faster but is not required.
 
 ```bash
 git clone https://github.com/Jorgenfje/kjentmann.git
@@ -23,50 +42,51 @@ cd kjentmann
 python -m venv .venv
 # Windows: .venv\Scripts\activate    Linux/macOS: source .venv/bin/activate
 
-# PyTorch med GPU-støtte (NVIDIA). Uten GPU: dropp denne linjen.
+# PyTorch with GPU support (NVIDIA). Without a GPU, skip this line.
 pip install torch --index-url https://download.pytorch.org/whl/cu126
 pip install -e ".[dev]"
 
-kjentmann all      # v0.1: kart, ruter og et kart du kan åpne
-kjentmann v02      # v0.2: testbilder, søk og evaluering
-pytest             # testene (uten nett)
+kjentmann all      # v0.1: map, tiles and an interactive map
+kjentmann v02      # v0.2: test images, search and evaluation
+pytest             # tests (offline)
 ```
 
-Resultat:
+Output:
 
-- `data/askim_map.html`: satellittbildet og rutenettet over Kartverkets kart
-- `data/results/askim/results.md`: tabell med treffsikkerhet
-- `data/results/askim/dinov2_map.html`: hvert testbilde på kartet, grønt for funnet og rødt for bom
+- `data/askim_map.html`: satellite image and tile grid over Kartverket's base map
+- `data/results/askim/results.md`: accuracy table
+- `data/results/askim/dinov2_map.html`: every test image on the map
 
-## Evaluering
+Area, dates, number of test images and model are set in `config.yaml`. Run `kjentmann --help` for all steps.
 
-Testbildene er 200 utsnitt fra et Sentinel-2-bilde tatt på en **annen dato** enn kartet, med annet lys, andre skygger og annen vegetasjon. De er plassert tilfeldig, uavhengig av rutenettet. Et søk er et treff når en returnert rute faktisk inneholder testbildets sentrum.
+## Project layout
 
-Tre tall sammenlignes:
-
-- **pixel:** en naiv metode som sammenligner forminskede piksler direkte
-- **dinov2:** fingeravtrykk fra DINOv2 (ViT-S/14)
-- **tilfeldig:** hva ren gjetting ville gitt, regnet ut eksakt
-
-Resultatene for Askim kommer her etter første kjøring.
-
-Antagelse: bildene er nordvendte. I et ekte system kommer retningen fra kompasset.
-
-Område, datoer, antall testbilder og modell endres i `config.yaml`.
+```
+src/kjentmann/
+  fetch.py      download Sentinel-2 scenes (only the pixels inside the area)
+  tiles.py      cut the map into overlapping tiles with known positions
+  queries.py    cut test images with ground truth from another date
+  embed.py      fingerprints: DINOv2 and a raw-pixel baseline
+  evaluate.py   FAISS search, scoring, exact chance baseline
+  viz.py        interactive maps
+tests/          offline tests with synthetic terrain
+```
 
 ## Data
 
-Sentinel-2 L2A fra Copernicus-programmet, hentet via den åpne [Earth Search](https://earth-search.aws.element84.com/v1)-katalogen. Ingen konto eller API-nøkkel trengs. Bare pikslene innenfor området lastes ned.
+Sentinel-2 L2A from the Copernicus programme, via the open [Earth Search](https://earth-search.aws.element84.com/v1) STAC catalogue. No account or API key is needed. Base maps from [Kartverket](https://www.kartverket.no/).
 
-## Veikart
+Sentinel-2 has 10 m pixels. That suits images taken from aircraft altitude (a few kilometres across), but not low drone images, which cover too few pixels.
 
-- [x] v0.1 Kartet finnes
-- [x] v0.2 Første treff (DINOv2 + FAISS)
-- [ ] v0.3 Presis posisjon (LightGlue) og evaluering
-- [ ] v0.4 Norsk vinter: treffsikkerhet per årstid
-- [ ] v0.5 På nett (Docker, Azure)
-- [ ] v1.0 Demo og lansering
+## Roadmap
 
-## Lisens
+- [x] v0.1 Map and tiles
+- [x] v0.2 Coarse search (DINOv2 + FAISS) with evaluation
+- [ ] v0.3 Precise position (LightGlue) and confidence score
+- [ ] v0.4 Norwegian winter: accuracy by season
+- [ ] v0.5 Online demo (Docker, Azure)
+- [ ] v1.0 Demo video and launch
 
-MIT. Sentinel-2-data: Copernicus Sentinel data, se [vilkår](https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice).
+## Licence
+
+MIT. Contains modified Copernicus Sentinel data, see the [terms](https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice).
