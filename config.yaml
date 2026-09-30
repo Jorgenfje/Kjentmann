@@ -33,3 +33,30 @@ model:
   image_size: 224
   batch_size: 32
   top_k: 5
+
+refine:
+  matcher: lightglue    # lightglue (DISK + LightGlue) or sift (OpenCV, no download)
+  window_scale: 1.5     # map window = 1.5 x tile, so images that straddle tiles fit
+  upscale: 2            # enlarge 10 m pixels 2x before detecting keypoints
+  max_keypoints: 2048
+  ransac_px: 3.0        # max reprojection error for an inlier, in pixels
+  min_inliers: 15       # fewer agreeing matches -> answer "unknown"
+  min_scale: 0.7        # reject transforms with implausible scale
+  max_scale: 1.4
+
+# Test-image profiles. 'easy' = plain crops (same sensor, north-up, same scale).
+# 'realistic' adds what a camera under an aircraft would see: some heading
+# error, unknown altitude (scale), blur and sensor noise.
+query_profiles:
+  easy:
+    rotation_deg: 0
+    scale_min: 1.0
+    scale_max: 1.0
+    blur_sigma: 0
+    noise_std: 0
+  realistic:
+    rotation_deg: 15      # random heading error, +/- degrees
+    scale_min: 0.8        # altitude 20 % lower ...
+    scale_max: 1.25       # ... to 25 % higher than assumed
+    blur_sigma: 1.0       # pixels
+    noise_std: 6          # grey levels

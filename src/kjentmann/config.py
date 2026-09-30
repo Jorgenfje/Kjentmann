@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import yaml
@@ -29,10 +29,25 @@ class Config:
     query_date_to: str = "2025-10-15"
     query_count: int = 200
     query_seed: int = 42
+    profile: str = "easy"
+    rotation_deg: float = 0.0
+    scale_min: float = 1.0
+    scale_max: float = 1.0
+    blur_sigma: float = 0.0
+    noise_std: float = 0.0
+    profiles: dict = field(default_factory=dict)
     model_name: str = "vit_small_patch14_dinov2.lvd142m"
     model_image_size: int = 224
     model_batch_size: int = 32
     top_k: int = 5
+    matcher: str = "lightglue"
+    window_scale: float = 1.5
+    upscale: int = 2
+    max_keypoints: int = 2048
+    ransac_px: float = 3.0
+    min_inliers: int = 15
+    min_scale: float = 0.7
+    max_scale: float = 1.4
 
     # Reference map ---------------------------------------------------------
     @property
@@ -67,9 +82,14 @@ class Config:
         return self.data_dir / "map" / f"{self.area_name}_query.json"
 
     @property
+    def _suffix(self) -> str:
+        """Profiles other than 'easy' get their own folders."""
+        return "" if self.profile == "easy" else f"_{self.profile}"
+
+    @property
     def queries_dir(self) -> Path:
         """Folder with test images and their ground truth."""
-        return self.data_dir / "queries" / self.area_name
+        return self.data_dir / "queries" / f"{self.area_name}{self._suffix}"
 
     @property
     def queries_csv(self) -> Path:
@@ -85,7 +105,22 @@ class Config:
     @property
     def results_dir(self) -> Path:
         """Evaluation reports and maps."""
-        return self.data_dir / "results" / self.area_name
+        return self.data_dir / "results" / f"{self.area_name}{self._suffix}"
+
+    def with_profile(self, name: str) -> Config:
+        """Copy of this config using a named test-image profile."""
+        if name not in self.profiles:
+            raise ValueError(f"Ukjent profil '{name}'. Finnes: {', '.join(self.profiles)}")
+        p = self.profiles[name]
+        return replace(
+            self,
+            profile=name,
+            rotation_deg=float(p.get("rotation_deg", 0)),
+            scale_min=float(p.get("scale_min", 1)),
+            scale_max=float(p.get("scale_max", 1)),
+            blur_sigma=float(p.get("blur_sigma", 0)),
+            noise_std=float(p.get("noise_std", 0)),
+        )
 
 
 def load_config(path: str | Path = "config.yaml") -> Config:
@@ -103,6 +138,7 @@ def load_config(path: str | Path = "config.yaml") -> Config:
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     query = raw.get("query", {})
     model = raw.get("model", {})
+    ref = raw.get("refine", {})
     cfg = Config(
         area_name=raw["area"]["name"],
         center_lat=float(raw["area"]["center_lat"]),
@@ -121,10 +157,19 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         query_date_to=str(query.get("date_to", "2025-10-15")),
         query_count=int(query.get("count", 200)),
         query_seed=int(query.get("seed", 42)),
+        profiles=raw.get("query_profiles", {"easy": {}}),
         model_name=str(model.get("name", "vit_small_patch14_dinov2.lvd142m")),
         model_image_size=int(model.get("image_size", 224)),
         model_batch_size=int(model.get("batch_size", 32)),
         top_k=int(model.get("top_k", 5)),
+        matcher=str(ref.get("matcher", "lightglue")),
+        window_scale=float(ref.get("window_scale", 1.5)),
+        upscale=int(ref.get("upscale", 2)),
+        max_keypoints=int(ref.get("max_keypoints", 2048)),
+        ransac_px=float(ref.get("ransac_px", 3.0)),
+        min_inliers=int(ref.get("min_inliers", 15)),
+        min_scale=float(ref.get("min_scale", 0.7)),
+        max_scale=float(ref.get("max_scale", 1.4)),
     )
     if not 0 <= cfg.tile_overlap < 1:
         raise ValueError("tiles.overlap must be in [0, 1)")
@@ -134,4 +179,6 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         raise ValueError("area.size_km must be positive")
     if cfg.top_k < 1:
         raise ValueError("model.top_k must be at least 1")
+    if "easy" in cfg.profiles:
+        cfg = cfg.with_profile("easy")
     return cfg

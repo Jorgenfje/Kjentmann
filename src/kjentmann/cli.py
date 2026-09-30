@@ -7,18 +7,28 @@ Steps, in order:
     fetch-query  download a scene from another date
     queries      cut test images with ground truth from that scene
     evaluate     index the tiles, search every test image, score the result
+    refine       coarse search + point matching: position in metres (v0.3)
 
 Shortcuts:
     all          fetch + tiles + map          (v0.1)
     v02          fetch-query + queries + evaluate
+    v03          refine
+
+Harder test images (rotation, scale, blur, noise):
+    kjentmann queries --profile realistic
+    kjentmann refine  --profile realistic
 """
 
 from __future__ import annotations
 
 import argparse
 
-STEPS = ["fetch", "tiles", "map", "fetch-query", "queries", "evaluate"]
-SHORTCUTS = {"all": ["fetch", "tiles", "map"], "v02": ["fetch-query", "queries", "evaluate"]}
+STEPS = ["fetch", "tiles", "map", "fetch-query", "queries", "evaluate", "refine"]
+SHORTCUTS = {
+    "all": ["fetch", "tiles", "map"],
+    "v02": ["fetch-query", "queries", "evaluate"],
+    "v03": ["refine"],
+}
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -37,6 +47,19 @@ def main(argv: list[str] | None = None) -> None:
         help="comma-separated list for 'evaluate' (default: pixel,dinov2)",
     )
     parser.add_argument(
+        "--coarse",
+        default="dinov2",
+        help="embedder for coarse search in 'refine' (default: dinov2)",
+    )
+    parser.add_argument(
+        "--matcher", default=None, help="lightglue or sift for 'refine' (default: from config)"
+    )
+    parser.add_argument(
+        "--profile",
+        default="easy",
+        help="test-image profile from config.yaml, e.g. easy or realistic (default: easy)",
+    )
+    parser.add_argument(
         "--no-pretrained",
         action="store_true",
         help="use random DINOv2 weights (testing only, no download)",
@@ -46,7 +69,7 @@ def main(argv: list[str] | None = None) -> None:
     # Imported here so `kjentmann --help` stays fast.
     from kjentmann.config import load_config
 
-    cfg = load_config(args.config)
+    cfg = load_config(args.config).with_profile(args.profile)
     for step in SHORTCUTS.get(args.command, [args.command]):
         run_step(step, cfg, args)
 
@@ -80,6 +103,14 @@ def run_step(step: str, cfg, args) -> None:
         names = [n.strip() for n in args.embedders.split(",") if n.strip()]
         embedders = [make_embedder(n, cfg, pretrained=not args.no_pretrained) for n in names]
         evaluate(cfg, embedders)
+    elif step == "refine":
+        from kjentmann.embed import make_embedder
+        from kjentmann.match import make_matcher
+        from kjentmann.refine import refine
+
+        embedder = make_embedder(args.coarse, cfg, pretrained=not args.no_pretrained)
+        matcher = make_matcher(args.matcher or cfg.matcher, cfg.max_keypoints, cfg.upscale)
+        refine(cfg, embedder, matcher)
 
 
 if __name__ == "__main__":

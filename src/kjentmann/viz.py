@@ -141,3 +141,44 @@ def build_results_map(cfg: Config, embedder_name: str, rows: list[dict]) -> None
     out = cfg.results_dir / f"{embedder_name}_map.html"
     m.save(str(out))
     print(f"Lagret resultatkart: {out}")
+
+
+def build_refine_map(cfg: Config, matcher_name: str, rows: list[dict]) -> None:
+    """Map after fine matching: colour by error in metres, grey for "unknown"."""
+    m = _base_map(cfg)
+    _add_satellite(m, cfg, show=False)
+
+    groups = {
+        "good": folium.FeatureGroup(name="Under 100 m feil"),
+        "ok": folium.FeatureGroup(name="100–500 m feil"),
+        "bad": folium.FeatureGroup(name="Over 500 m feil"),
+        "unknown": folium.FeatureGroup(name="Vet ikke"),
+    }
+    colors = {"good": "#1a9850", "ok": "#fdae61", "bad": "#d73027", "unknown": "#888888"}
+    for r in rows:
+        answered = r["error_m"] != "" and r["inliers"] >= cfg.min_inliers
+        if not answered:
+            kind = "unknown"
+        elif r["error_m"] <= 100:
+            kind = "good"
+        elif r["error_m"] <= 500:
+            kind = "ok"
+        else:
+            kind = "bad"
+        true_pt = [r["true_lat"], r["true_lon"]]
+        err = f"{r['error_m']:.0f} m" if r["error_m"] != "" else "ingen posisjon"
+        tip = f"{r['query_id']}: {err}, {r['inliers']} inliers"
+        folium.CircleMarker(
+            true_pt, radius=5, color=colors[kind], fill=True, fill_opacity=0.9, tooltip=tip
+        ).add_to(groups[kind])
+        if answered and kind != "good":
+            folium.PolyLine(
+                [true_pt, [r["est_lat"], r["est_lon"]]], color=colors[kind], weight=1, opacity=0.7
+            ).add_to(groups[kind])
+    for g in groups.values():
+        g.add_to(m)
+
+    folium.LayerControl(collapsed=False).add_to(m)
+    out = cfg.results_dir / f"refine_{matcher_name}_map.html"
+    m.save(str(out))
+    print(f"Lagret resultatkart: {out}")

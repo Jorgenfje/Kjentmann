@@ -2,7 +2,10 @@
 
 Each test image is a square crop at a random position, not aligned to the tile
 grid. Its true centre is recorded, so the search can be scored against it.
-Images are north-up: in a real system the heading comes from a compass.
+
+The 'easy' profile gives plain north-up crops at map scale. Other profiles add
+what a real camera would see: a heading error (rotation), unknown altitude
+(scale), blur and sensor noise. The true centre is unchanged by these.
 """
 
 from __future__ import annotations
@@ -11,6 +14,7 @@ import csv
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+import cv2
 import numpy as np
 import rasterio
 from PIL import Image
@@ -29,6 +33,8 @@ class Query:
     center_lat: float
     center_x: float  # in the reference map CRS, metres
     center_y: float
+    rotation_deg: float = 0.0
+    scale: float = 1.0  # ground covered, relative to a map tile
 
 
 def sample_offsets(
@@ -75,9 +81,15 @@ def build_queries(cfg: Config) -> list[Query]:
         image = src.read()
         transform, crs = src.transform, src.crs
     valid = image.max(axis=0) > 0
+    perturbed = cfg.rotation_deg > 0 or cfg.scale_min != 1 or cfg.scale_max != 1
+    # Room for the largest rotated, scaled footprint around each centre.
+    span = int(np.ceil(size * cfg.scale_max * (1.415 if cfg.rotation_deg else 1))) + 2
+    span = span if perturbed else size
     offsets = sample_offsets(
-        image.shape[1], image.shape[2], size, cfg.query_count, cfg.query_seed, valid
+        image.shape[1], image.shape[2], span, cfg.query_count, cfg.query_seed, valid
     )
+    rng = np.random.default_rng(cfg.query_seed + 1)
+    rgb = np.ascontiguousarray(np.moveaxis(image[:3], 0, -1).astype(np.uint8))
 
     to_lonlat = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
     to_map = Transformer.from_crs(crs, map_crs, always_xy=True)
@@ -85,17 +97,63 @@ def build_queries(cfg: Config) -> list[Query]:
     cfg.queries_dir.mkdir(parents=True, exist_ok=True)
     queries = []
     for i, (r, c) in enumerate(offsets):
-        x, y = apply_transform(transform, c + size / 2, r + size / 2)
+        cx, cy = c + span / 2, r + span / 2
+        angle = float(rng.uniform(-cfg.rotation_deg, cfg.rotation_deg))
+        scale = float(rng.uniform(cfg.scale_min, cfg.scale_max))
+        crop = render_view(rgb, cx, cy, size, angle, scale)
+        crop = degrade(crop, cfg.blur_sigma, cfg.noise_std, rng)
+        x, y = apply_transform(transform, cx, cy)
         lon, lat = to_lonlat.transform(x, y)
         mx, my = to_map.transform(x, y)
-        q = Query(f"q{i:04d}", lon, lat, mx, my)
-        crop = np.moveaxis(image[:3, r : r + size, c : c + size], 0, -1).astype(np.uint8)
+        q = Query(f"q{i:04d}", lon, lat, mx, my, round(angle, 2), round(scale, 3))
         Image.fromarray(crop).save(cfg.queries_dir / f"{q.query_id}.png")
         queries.append(q)
 
     write_queries(queries, cfg.queries_csv)
     print(f"Lagret {len(queries)} testbilder i {cfg.queries_dir}")
     return queries
+
+
+def render_view(
+    rgb: np.ndarray, cx: float, cy: float, size: int, angle_deg: float, scale: float
+) -> np.ndarray:
+    """What a camera centred on (cx, cy) sees, rotated and at a given scale.
+
+    Each output pixel covers ``scale`` map pixels. With angle 0 and scale 1
+    this is an exact crop.
+    """
+    if angle_deg == 0 and scale == 1:
+        x0, y0 = int(round(cx - size / 2)), int(round(cy - size / 2))
+        return rgb[y0 : y0 + size, x0 : x0 + size].copy()
+    a = np.deg2rad(angle_deg)
+    cos, sin = np.cos(a) * scale, np.sin(a) * scale
+    # OpenCV works in pixel-index coordinates, where the centre of pixel i is
+    # at i. (cx, cy) is continuous (pixel i spans [i, i + 1)), so shift by 0.5.
+    h = (size - 1) / 2
+    px, py = cx - 0.5, cy - 0.5
+    # Output pixel (u, v) -> source pixel, rotating about the image centre.
+    m = np.array(
+        [[cos, -sin, px - (cos * h - sin * h)], [sin, cos, py - (sin * h + cos * h)]],
+        dtype=np.float64,
+    )
+    return cv2.warpAffine(
+        rgb,
+        m,
+        (size, size),
+        flags=cv2.INTER_AREA | cv2.WARP_INVERSE_MAP,
+        borderMode=cv2.BORDER_REFLECT,
+    )
+
+
+def degrade(img: np.ndarray, blur_sigma: float, noise_std: float, rng) -> np.ndarray:
+    """Add lens blur and sensor noise."""
+    out = img
+    if blur_sigma > 0:
+        out = cv2.GaussianBlur(out, (0, 0), blur_sigma)
+    if noise_std > 0:
+        noisy = out.astype(np.float32) + rng.normal(0, noise_std, out.shape)
+        out = np.clip(noisy, 0, 255).astype(np.uint8)
+    return out
 
 
 def write_queries(queries: list[Query], path: Path) -> None:
@@ -117,6 +175,8 @@ def read_queries(path: Path) -> list[Query]:
                 float(row["center_lat"]),
                 float(row["center_x"]),
                 float(row["center_y"]),
+                float(row.get("rotation_deg") or 0),
+                float(row.get("scale") or 1),
             )
             for row in csv.DictReader(f)
         ]
