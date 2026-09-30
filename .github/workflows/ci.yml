@@ -15,7 +15,10 @@ jobs:
           python-version: "3.11"
           cache: pip
       - name: Install
-        run: pip install -e ".[dev]"
+        # CPU build of PyTorch keeps CI fast; the DINOv2 test uses random weights.
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[dev]"
       - name: Lint
         run: |
           ruff check .

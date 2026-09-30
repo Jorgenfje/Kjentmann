@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kjentmann"
-version = "0.1.0"
+version = "0.2.0"
 description = "GPS-free visual positioning: find where an overhead image was taken by matching it against satellite imagery."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,6 +19,10 @@ dependencies = [
     "pyyaml>=6.0",
     "pillow>=10.0",
     "folium>=0.15",
+    "faiss-cpu>=1.8",
+    "timm>=1.0",
+    # torch: install the CUDA build first, see README
+    "torch>=2.2",
 ]
 
 [project.optional-dependencies]

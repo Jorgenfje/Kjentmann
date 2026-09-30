@@ -19,3 +19,17 @@ tiles:
 
 paths:
   data_dir: data
+
+query:
+  # Test images come from a different date than the map, so light,
+  # vegetation and shadows differ. The map scene itself is excluded.
+  date_from: "2025-04-15"
+  date_to: "2025-10-15"
+  count: 200
+  seed: 42
+
+model:
+  name: vit_small_patch14_dinov2.lvd142m   # timm model id
+  image_size: 224
+  batch_size: 32
+  top_k: 5

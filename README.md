@@ -4,7 +4,7 @@
 
 GPS kan jammes og forfalskes. I Øst-Finnmark er det et daglig problem, og FFI anbefaler reserveløsninger for posisjonering. Et kamera som ser ned kan ikke jammes. Kjentmann kjenner igjen terrenget og gir en posisjon uten satellittsignaler.
 
-> Status: **v0.1**. Kartet over testområdet lastes ned og deles i ruter. Gjenkjenning kommer i v0.2.
+> Status: **v0.2**. Grovsøk med DINOv2 og FAISS, målt mot testbilder fra en annen dato. Presis posisjon kommer i v0.3.
 
 ## Slik fungerer det
 
@@ -15,26 +15,44 @@ GPS kan jammes og forfalskes. I Øst-Finnmark er det et daglig problem, og FFI a
 
 ## Kom i gang
 
-Krever Python 3.10 eller nyere.
+Krever Python 3.10 eller nyere. Et NVIDIA-skjermkort gjør DINOv2 raskere, men er ikke nødvendig.
 
 ```bash
 git clone https://github.com/Jorgenfje/kjentmann.git
 cd kjentmann
 python -m venv .venv
 # Windows: .venv\Scripts\activate    Linux/macOS: source .venv/bin/activate
+
+# PyTorch med GPU-støtte (NVIDIA). Uten GPU: dropp denne linjen.
+pip install torch --index-url https://download.pytorch.org/whl/cu126
 pip install -e ".[dev]"
 
-kjentmann all      # laster ned kart, lager ruter og et kart du kan åpne
-pytest             # kjører testene (uten nett)
+kjentmann all      # v0.1: kart, ruter og et kart du kan åpne
+kjentmann v02      # v0.2: testbilder, søk og evaluering
+pytest             # testene (uten nett)
 ```
 
 Resultat:
 
-- `data/map/askim.tif`: satellittbildet av området
-- `data/tiles/askim/`: rutene som PNG, og `tiles.csv` med posisjonen til hver rute
-- `data/askim_map.html`: interaktivt kart for å sjekke at alt ligger riktig
+- `data/askim_map.html`: satellittbildet og rutenettet over Kartverkets kart
+- `data/results/askim/results.md`: tabell med treffsikkerhet
+- `data/results/askim/dinov2_map.html`: hvert testbilde på kartet, grønt for funnet og rødt for bom
 
-Området, datoer og rutestørrelse endres i `config.yaml`.
+## Evaluering
+
+Testbildene er 200 utsnitt fra et Sentinel-2-bilde tatt på en **annen dato** enn kartet, med annet lys, andre skygger og annen vegetasjon. De er plassert tilfeldig, uavhengig av rutenettet. Et søk er et treff når en returnert rute faktisk inneholder testbildets sentrum.
+
+Tre tall sammenlignes:
+
+- **pixel:** en naiv metode som sammenligner forminskede piksler direkte
+- **dinov2:** fingeravtrykk fra DINOv2 (ViT-S/14)
+- **tilfeldig:** hva ren gjetting ville gitt, regnet ut eksakt
+
+Resultatene for Askim kommer her etter første kjøring.
+
+Antagelse: bildene er nordvendte. I et ekte system kommer retningen fra kompasset.
+
+Område, datoer, antall testbilder og modell endres i `config.yaml`.
 
 ## Data
 
@@ -43,7 +61,7 @@ Sentinel-2 L2A fra Copernicus-programmet, hentet via den åpne [Earth Search](ht
 ## Veikart
 
 - [x] v0.1 Kartet finnes
-- [ ] v0.2 Første treff (DINOv2 + FAISS)
+- [x] v0.2 Første treff (DINOv2 + FAISS)
 - [ ] v0.3 Presis posisjon (LightGlue) og evaluering
 - [ ] v0.4 Norsk vinter: treffsikkerhet per årstid
 - [ ] v0.5 På nett (Docker, Azure)
