@@ -49,7 +49,15 @@ def build_map(cfg: Config) -> None:
     size = cfg.tile_size_px
 
     m = folium.Map(location=[cfg.center_lat, cfg.center_lon], zoom_start=12, tiles=None)
-    folium.TileLayer("OpenStreetMap", name="OpenStreetMap").add_to(m)
+    # OpenStreetMap blocks tile requests from local files (no Referer header),
+    # so use Kartverket's open topographic map, with CartoDB as an alternative.
+    folium.TileLayer(
+        tiles="https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png",
+        attr='&copy; <a href="https://www.kartverket.no/">Kartverket</a>',
+        name="Kartverket topo",
+        max_zoom=18,
+    ).add_to(m)
+    folium.TileLayer("CartoDB positron", name="CartoDB").add_to(m)
 
     url, bounds = _overlay_png(cfg)
     folium.raster_layers.ImageOverlay(
