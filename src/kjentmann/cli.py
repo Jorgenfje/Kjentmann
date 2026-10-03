@@ -8,6 +8,8 @@ Steps, in order:
     queries      cut test images with ground truth from that scene
     evaluate     index the tiles, search every test image, score the result
     refine       coarse search + point matching: position in metres (v0.3)
+    diagnose     coarse search on blur / rotation / scale test images, one at a time
+    navigate     search inside an uncertainty circle (2, 5, 10 km), no coarse step (v0.4)
 
 Shortcuts:
     all          fetch + tiles + map          (v0.1)
@@ -23,7 +25,17 @@ from __future__ import annotations
 
 import argparse
 
-STEPS = ["fetch", "tiles", "map", "fetch-query", "queries", "evaluate", "refine"]
+STEPS = [
+    "fetch",
+    "tiles",
+    "map",
+    "fetch-query",
+    "queries",
+    "evaluate",
+    "refine",
+    "diagnose",
+    "navigate",
+]
 SHORTCUTS = {
     "all": ["fetch", "tiles", "map"],
     "v02": ["fetch-query", "queries", "evaluate"],
@@ -120,6 +132,16 @@ def run_step(step: str, cfg, args) -> None:
         embedder = make_embedder(args.coarse, cfg, pretrained=not args.no_pretrained)
         matcher = make_matcher(args.matcher or cfg.matcher, cfg.max_keypoints, cfg.upscale)
         refine(cfg, embedder, matcher)
+    elif step == "diagnose":
+        from kjentmann.diagnose import diagnose
+        from kjentmann.embed import make_embedder
+
+        diagnose(cfg, make_embedder(args.coarse, cfg, pretrained=not args.no_pretrained))
+    elif step == "navigate":
+        from kjentmann.match import make_matcher
+        from kjentmann.navigate import navigate
+
+        navigate(cfg, make_matcher(args.matcher or cfg.matcher, cfg.max_keypoints, cfg.upscale))
 
 
 if __name__ == "__main__":

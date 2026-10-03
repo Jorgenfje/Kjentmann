@@ -143,7 +143,9 @@ def build_results_map(cfg: Config, embedder_name: str, rows: list[dict]) -> None
     print(f"Lagret resultatkart: {out}")
 
 
-def build_refine_map(cfg: Config, matcher_name: str, rows: list[dict]) -> None:
+def build_refine_map(
+    cfg: Config, matcher_name: str, rows: list[dict], filename: str | None = None
+) -> None:
     """Map after fine matching: colour by error in metres, grey for "unknown"."""
     m = _base_map(cfg)
     _add_satellite(m, cfg, show=False)
@@ -179,6 +181,6 @@ def build_refine_map(cfg: Config, matcher_name: str, rows: list[dict]) -> None:
         g.add_to(m)
 
     folium.LayerControl(collapsed=False).add_to(m)
-    out = cfg.results_dir / f"refine_{matcher_name}_map.html"
+    out = cfg.results_dir / (filename or f"refine_{matcher_name}_map.html")
     m.save(str(out))
     print(f"Lagret resultatkart: {out}")

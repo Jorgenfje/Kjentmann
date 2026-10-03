@@ -50,6 +50,13 @@ refine:
   # If no candidate reaches min_inliers, match again with the image rotated.
   fine_rotations: [-15, 15]
 
+navigate:
+  # v0.4: search only inside an uncertainty circle around the inertial estimate.
+  radii_km: [2, 5, 10]   # evaluated in one run
+  window_scale: 2.0      # windows 2 x tile at a stride of 1 tile
+  early_stop_inliers: 40 # stop searching once a window is this confident
+  map_radius_km: 5       # which radius gets a results map
+
 # Test-image profiles. 'easy' = plain crops (same sensor, north-up, same scale).
 # 'realistic' adds what a camera under an aircraft would see: some heading
 # error, unknown altitude (scale), blur and sensor noise.
@@ -66,3 +73,22 @@ query_profiles:
     scale_max: 1.25       # ... to 25 % higher than assumed
     blur_sigma: 1.0       # pixels
     noise_std: 6          # grey levels
+  # Diagnosis: one factor at a time (kjentmann diagnose)
+  blur:
+    rotation_deg: 0
+    scale_min: 1.0
+    scale_max: 1.0
+    blur_sigma: 1.0
+    noise_std: 6
+  rotation:
+    rotation_deg: 15
+    scale_min: 1.0
+    scale_max: 1.0
+    blur_sigma: 0
+    noise_std: 0
+  scale:
+    rotation_deg: 0
+    scale_min: 0.8
+    scale_max: 1.25
+    blur_sigma: 0
+    noise_std: 0

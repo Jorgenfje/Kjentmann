@@ -163,3 +163,12 @@ def test_coarse_candidates_without_augmentation_equals_plain_search(prepared):
     # With extra rotations each image still finds itself first.
     got_tta = coarse_candidates(emb, index, imgs[:6], 5, rotations=(-15, 0, 15))
     assert (got_tta[:, 0] == np.arange(6)).all()
+
+
+def test_diagnose_runs_every_profile(prepared):
+    from kjentmann.diagnose import diagnose
+
+    rows = diagnose(prepared, PixelEmbedder())
+    assert [r["profile"] for r in rows] == ["easy", "blur", "rotation", "scale", "realistic"]
+    table = (prepared.data_dir / "results" / "askim_diagnose.md").read_text()
+    assert "rotation ±15° only" in table

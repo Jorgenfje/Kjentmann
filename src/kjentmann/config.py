@@ -51,6 +51,10 @@ class Config:
     tta_rotations: tuple = (0.0,)
     tta_scales: tuple = (1.0,)
     fine_rotations: tuple = ()
+    early_stop_inliers: int = 40
+    nav_radii_km: tuple = (2.0, 5.0, 10.0)
+    nav_window_scale: float = 2.0
+    nav_map_radius_km: float = 5.0
 
     # Reference map ---------------------------------------------------------
     @property
@@ -142,6 +146,7 @@ def load_config(path: str | Path = "config.yaml") -> Config:
     query = raw.get("query", {})
     model = raw.get("model", {})
     ref = raw.get("refine", {})
+    nav = raw.get("navigate", {})
     cfg = Config(
         area_name=raw["area"]["name"],
         center_lat=float(raw["area"]["center_lat"]),
@@ -176,6 +181,10 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         tta_rotations=tuple(float(a) for a in ref.get("tta_rotations", [0])),
         tta_scales=tuple(float(z) for z in ref.get("tta_zooms", [1])),
         fine_rotations=tuple(float(a) for a in ref.get("fine_rotations", [])),
+        early_stop_inliers=int(nav.get("early_stop_inliers", 40)),
+        nav_radii_km=tuple(float(r) for r in nav.get("radii_km", [2, 5, 10])),
+        nav_window_scale=float(nav.get("window_scale", 2.0)),
+        nav_map_radius_km=float(nav.get("map_radius_km", 5)),
     )
     if not 0 <= cfg.tile_overlap < 1:
         raise ValueError("tiles.overlap must be in [0, 1)")
