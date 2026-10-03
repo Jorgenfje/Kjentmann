@@ -38,7 +38,13 @@ class Query:
 
 
 def sample_offsets(
-    height: int, width: int, size: int, count: int, seed: int, min_valid: np.ndarray | None = None
+    height: int,
+    width: int,
+    size: int,
+    count: int,
+    seed: int,
+    min_valid: np.ndarray | None = None,
+    min_valid_share: float = 0.99,
 ) -> list[tuple[int, int]]:
     """Random top-left offsets for crops that fit inside the image.
 
@@ -48,14 +54,22 @@ def sample_offsets(
         size: Crop side in pixels.
         count: Number of crops wanted.
         seed: Random seed, so the test set is reproducible.
-        min_valid: Optional boolean mask of valid pixels; crops touching
-            no-data are skipped.
+        min_valid: Optional boolean mask of valid pixels.
+        min_valid_share: Smallest share of valid pixels a crop may have. Real
+            no-data areas are large; single dark pixels (deep shadow, water at
+            low sun) must not reject a crop, or test images cluster in the few
+            areas without any.
 
     Returns:
         A list of (row, col) offsets.
     """
     if height < size or width < size:
         return []
+    integral = None
+    if min_valid is not None:
+        integral = np.zeros((height + 1, width + 1), dtype=np.int64)
+        integral[1:, 1:] = min_valid.astype(np.int64).cumsum(0).cumsum(1)
+    need = min_valid_share * size * size
     rng = np.random.default_rng(seed)
     out: list[tuple[int, int]] = []
     attempts = 0
@@ -63,9 +77,20 @@ def sample_offsets(
         attempts += 1
         r = int(rng.integers(0, height - size + 1))
         c = int(rng.integers(0, width - size + 1))
-        if min_valid is not None and not min_valid[r : r + size, c : c + size].all():
-            continue
+        if integral is not None:
+            ok = (
+                integral[r + size, c + size]
+                - integral[r, c + size]
+                - integral[r + size, c]
+                + integral[r, c]
+            )
+            if ok < need:
+                continue
         out.append((r, c))
+    if attempts:
+        print(
+            f"  {len(out)}/{attempts} tilfeldige plasseringer godkjent ({len(out) / attempts:.0%})"
+        )
     return out
 
 

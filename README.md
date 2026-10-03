@@ -26,11 +26,11 @@ The same search (5 km radius, same camera conditions) with test images from othe
 
 | Test images | Date | Snow in area | Answered | Median error | Within 100 m | Wrong (> 500 m) | Time per image |
 |---|---|---|---|---|---|---|---|
-| Spring | 19 May 2025 | 0% | 100% | 3 m | 100% | 0% | 0.27 s |
-| Autumn | 23 Sep 2025 | 0% | 100% | 3 m | 100% | 0% | 0.25 s |
-| **Winter** | **14 Mar 2025** | **74%** | **97%** | **4 m** | **97%** | **0%** | **0.37 s** |
+| Spring | 19 May 2025 | 0% | 100% | 3 m | 100% | 0% | 0.26 s |
+| Autumn | 23 Sep 2025 | 0% | 99% | 4 m | 99% | 0% | 0.28 s |
+| **Winter** | **14 Mar 2025** | **74%** | **91%** | **8 m** | **90%** | **0%** | **0.80 s** |
 
-With three quarters of the area under snow, 97% of images are still placed within 100 m. The remaining 3% get "unknown", not a wrong position. The winter scene is chosen automatically as the snowiest cloud-free scene in February and March, and its snow share comes from the Sentinel-2 scene classification layer, so a mild winter cannot pass as a snow test.
+With three quarters of the area under snow, 91% of images are still placed, with a median error of 8 m. The rest get "unknown", never a wrong position. Snow makes the search work harder: on average 22 map windows are tried per image in winter, against 3 to 5 in spring and autumn. The winter scene is chosen automatically as the snowiest cloud-free scene in February and March, and its snow share comes from the Sentinel-2 scene classification layer, so a mild winter cannot pass as a snow test.
 
 Read the [limitations](#limitations) before drawing conclusions: this is a controlled test, not a flight test.
 
