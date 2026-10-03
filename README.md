@@ -6,7 +6,7 @@ GNSS signals can be jammed and spoofed. In eastern Finnmark, Norway, interferenc
 
 *A "kjentmann" is Norwegian for a local guide: someone who knows the terrain and finds the way without a map.*
 
-> **Status: v0.4.** Search inside the uncertainty circle of an inertial position estimate, point matching with LightGlue, position in metres, and "unknown" instead of a guess when confidence is low.
+> **Status: v0.5.** Search inside the uncertainty circle of an inertial position estimate, point matching with LightGlue, position in metres, and "unknown" instead of a guess when confidence is low.
 
 ## Result
 
@@ -19,6 +19,18 @@ GNSS signals can be jammed and spoofed. In eastern Finnmark, Norway, interferenc
 | 10 km | 100% | 3 m | 100% | 0% | 0.46 s |
 
 *Area: 20 × 20 km around Askim, Norway. Map: Sentinel-2, 13 June 2025. Test images: Sentinel-2, 19 May 2025. GPU: NVIDIA RTX 3050.*
+
+### Across seasons
+
+The same search (5 km radius, same camera conditions) with test images from other seasons, against the June map:
+
+| Test images | Date | Snow in area | Answered | Median error | Within 100 m | Wrong (> 500 m) | Time per image |
+|---|---|---|---|---|---|---|---|
+| Spring | 19 May 2025 | 0% | 100% | 3 m | 100% | 0% | 0.27 s |
+| Autumn | 23 Sep 2025 | 0% | 100% | 3 m | 100% | 0% | 0.25 s |
+| **Winter** | **14 Mar 2025** | **74%** | **97%** | **4 m** | **97%** | **0%** | **0.37 s** |
+
+With three quarters of the area under snow, 97% of images are still placed within 100 m. The remaining 3% get "unknown", not a wrong position. The winter scene is chosen automatically as the snowiest cloud-free scene in February and March, and its snow share comes from the Sentinel-2 scene classification layer, so a mild winter cannot pass as a snow test.
 
 Read the [limitations](#limitations) before drawing conclusions: this is a controlled test, not a flight test.
 
@@ -73,7 +85,7 @@ Real navigation systems already have an approximate position from inertial navig
 
 ## Limitations
 
-- **Same sensor and season.** Map and test images are both Sentinel-2, 25 days apart in late spring. A real camera has different colours and optics, and the season may differ from the map. A winter test is next.
+- **Same sensor.** Map and test images are both Sentinel-2. Seasons are covered (spring, autumn, snow-covered winter), but a real camera has different colours, optics and resolution.
 - **Simulated camera.** Heading, altitude, blur and noise are simulated. Camera tilt (not looking straight down) is not.
 - **The circle always contains the truth.** The simulated inertial error is uniform inside the radius. A real inertial system can drift further than assumed.
 - **Altitude.** Sentinel-2 has 10 m pixels, which suits images covering a few kilometres (aircraft altitude, or a skydiver at exit), not low drone images.
@@ -96,6 +108,7 @@ kjentmann all                          # map, tiles, interactive map
 kjentmann v02                          # test images from another date, coarse search
 kjentmann queries --profile realistic  # test images with camera conditions
 kjentmann navigate --profile realistic # uncertainty-circle search (main result)
+kjentmann seasons                      # spring, autumn and winter against the June map
 kjentmann diagnose                     # coarse search, one factor at a time
 pytest                                 # tests (offline, synthetic terrain)
 ```
@@ -117,6 +130,7 @@ src/kjentmann/
   refine.py     coarse search + point matching on the top candidates
   diagnose.py   coarse search on single-factor test profiles
   navigate.py   search inside an uncertainty circle
+  seasons.py    test scenes from other seasons, snow share from the SCL layer
   viz.py        interactive maps
 tests/          offline tests with synthetic terrain
 ```
@@ -132,7 +146,7 @@ Sentinel-2 L2A from the Copernicus programme, via the open [Earth Search](https:
 - [x] v0.3 Precise position (LightGlue) and confidence score
 - [x] v0.4 Search inside an uncertainty circle
 - [ ] v0.4 Detect spoofed GPS by comparing it with the visual position
-- [ ] v0.5 Norwegian winter: summer map against snow-covered test images
+- [x] v0.5 Seasons: spring, autumn and snow-covered winter against a summer map
 - [ ] v0.6 Online demo (Docker, Azure)
 - [ ] v1.0 Demo with skydiving helmet footage, and launch
 
