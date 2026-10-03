@@ -28,7 +28,9 @@ GDAL_ENV = {
 }
 
 
-def search_scenes(cfg: Config, date_from: str, date_to: str) -> list:
+def search_scenes(
+    cfg: Config, date_from: str, date_to: str, max_cloud: float | None = None
+) -> list:
     """Find scenes that fully cover the area, least cloudy first."""
     bbox = lonlat_bbox(cfg.center_lat, cfg.center_lon, cfg.size_km)
     client = Client.open(cfg.stac_url)
@@ -36,7 +38,7 @@ def search_scenes(cfg: Config, date_from: str, date_to: str) -> list:
         collections=[cfg.collection],
         bbox=bbox,
         datetime=f"{date_from}/{date_to}",
-        query={"eo:cloud_cover": {"lt": cfg.max_cloud_cover}},
+        query={"eo:cloud_cover": {"lt": cfg.max_cloud_cover if max_cloud is None else max_cloud}},
         max_items=300,
     )
     area = box(*bbox)
@@ -72,6 +74,28 @@ def read_area(cfg: Config, href: str) -> tuple[np.ndarray, dict]:
     return data, profile
 
 
+# Sentinel-2 scene classification (SCL) codes.
+SCL_CLOUD = (3, 8, 9, 10)  # cloud shadow, cloud medium/high probability, thin cirrus
+SCL_SNOW = (11,)
+
+
+def scl_fractions(cfg: Config, item) -> tuple[float, float] | None:
+    """Share of cloud and snow inside the area, from the SCL layer (20 m).
+
+    Returns None if the scene has no SCL asset.
+    """
+    asset = item.assets.get("scl")
+    if asset is None:
+        return None
+    scl, _ = read_area(cfg, asset.href)
+    scl = scl[0]
+    valid = scl > 0
+    n = max(int(valid.sum()), 1)
+    cloud = float(np.isin(scl, SCL_CLOUD).sum() / n)
+    snow = float(np.isin(scl, SCL_SNOW).sum() / n)
+    return cloud, snow
+
+
 def valid_fraction(data: np.ndarray) -> float:
     """Share of pixels that are not no-data (all bands zero)."""
     return float((data.max(axis=0) > 0).mean())
@@ -84,8 +108,17 @@ def fetch_scene(
     out_tif: Path,
     out_meta: Path,
     exclude_dates: set[str] | None = None,
+    max_cloud: float | None = None,
+    prefer_snow: bool = False,
+    max_area_cloud: float = 0.05,
+    max_candidates: int = 8,
 ) -> dict:
-    """Download the least cloudy valid scene in a date range.
+    """Download the best valid scene in a date range.
+
+    A scene is valid when it covers the whole area and the SCL layer shows at
+    most ``max_area_cloud`` cloud inside the area. Normally the least cloudy
+    valid scene is used. With ``prefer_snow``, up to ``max_candidates`` valid
+    scenes are compared and the one with most snow wins.
 
     Args:
         cfg: Project configuration.
@@ -94,6 +127,10 @@ def fetch_scene(
         out_tif: Where to write the GeoTIFF.
         out_meta: Where to write metadata as JSON.
         exclude_dates: Acquisition dates (YYYY-MM-DD) to skip.
+        max_cloud: Scene-level cloud limit for the catalogue search (percent).
+        prefer_snow: Pick the snowiest valid scene instead of the clearest.
+        max_area_cloud: Largest accepted cloud share inside the area (0 to 1).
+        max_candidates: How many valid scenes to compare when preferring snow.
 
     Returns:
         The metadata that was written.
@@ -104,43 +141,60 @@ def fetch_scene(
 
     items = [
         it
-        for it in search_scenes(cfg, date_from, date_to)
+        for it in search_scenes(cfg, date_from, date_to, max_cloud)
         if it.properties.get("datetime", "")[:10] not in exclude_dates
     ]
     if not items:
         raise SystemExit(
             "Fant ingen skyfrie bilder. Prøv et lengre datointervall eller høyere max_cloud_cover."
         )
-    print(f"Fant {len(items)} kandidater. Prøver den minst skyete først.")
+    order = "mest snø" if prefer_snow else "minst skyer"
+    print(f"Fant {len(items)} kandidater. Velger gyldig bilde med {order}.")
 
+    chosen = None  # (snow, item, data, profile, cloud_area)
+    checked = 0
     for item in items:
-        href = item.assets["visual"].href
         cloud = item.properties.get("eo:cloud_cover")
-        print(f"  {item.id}  skydekke {cloud:.1f} %")
-        data, profile = read_area(cfg, href)
+        day = item.properties.get("datetime", "")[:10]
+        data, profile = read_area(cfg, item.assets["visual"].href)
         frac = valid_fraction(data)
         if frac < cfg.min_valid_fraction:
-            print(f"    hopper over: bare {frac:.1%} gyldige piksler i området")
+            print(f"  {day}: hopper over, bare {frac:.1%} gyldige piksler")
             continue
+        fr = scl_fractions(cfg, item)
+        cloud_area, snow = fr if fr is not None else (0.0, float("nan"))
+        if cloud_area > max_area_cloud:
+            print(f"  {day}: hopper over, {cloud_area:.0%} skyer over området")
+            continue
+        print(f"  {day}: skyer {cloud_area:.0%}, snø {snow:.0%} i området (scene {cloud:.1f} %)")
+        checked += 1
+        if chosen is None or (prefer_snow and snow > chosen[0]):
+            chosen = (snow, item, data, profile, cloud_area)
+        if not prefer_snow or checked >= max_candidates:
+            break
 
-        out_tif.parent.mkdir(parents=True, exist_ok=True)
-        with rasterio.open(out_tif, "w", **profile) as dst:
-            dst.write(data)
-        meta = {
-            "scene_id": item.id,
-            "datetime": item.properties.get("datetime"),
-            "cloud_cover": cloud,
-            "crs": str(profile["crs"]),
-            "width": profile["width"],
-            "height": profile["height"],
-            "pixel_size_m": abs(profile["transform"].a),
-            "source": href,
-        }
-        out_meta.write_text(json.dumps(meta, indent=2), encoding="utf-8")
-        print(f"Lagret {out_tif} ({profile['width']} x {profile['height']} px)")
-        return meta
+    if chosen is None:
+        raise SystemExit("Ingen gyldige bilder i perioden. Prøv et annet datointervall.")
 
-    raise SystemExit("Ingen av kandidatene dekket hele området. Prøv et annet datointervall.")
+    snow, item, data, profile, cloud_area = chosen
+    out_tif.parent.mkdir(parents=True, exist_ok=True)
+    with rasterio.open(out_tif, "w", **profile) as dst:
+        dst.write(data)
+    meta = {
+        "scene_id": item.id,
+        "datetime": item.properties.get("datetime"),
+        "cloud_cover": item.properties.get("eo:cloud_cover"),
+        "area_cloud_fraction": round(cloud_area, 3),
+        "area_snow_fraction": None if snow != snow else round(snow, 3),
+        "crs": str(profile["crs"]),
+        "width": profile["width"],
+        "height": profile["height"],
+        "pixel_size_m": abs(profile["transform"].a),
+        "source": item.assets["visual"].href,
+    }
+    out_meta.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    print(f"Lagret {out_tif}: {meta['datetime'][:10]}, snø {snow:.0%} i området")
+    return meta
 
 
 def fetch(cfg: Config) -> dict:
@@ -153,12 +207,15 @@ def fetch_query_scene(cfg: Config) -> dict:
     if not cfg.map_meta_path.exists():
         raise SystemExit("Kjør 'kjentmann fetch' først, så vi vet hvilken dato kartet er fra.")
     map_date = json.loads(cfg.map_meta_path.read_text(encoding="utf-8"))["datetime"][:10]
-    print(f"Kartet er fra {map_date}. Henter testbilde fra en annen dato.")
+    date_from, date_to, max_cloud = cfg.scene_dates
+    print(f"Kartet er fra {map_date}. Henter testbilde ({cfg.scene}) {date_from} til {date_to}.")
     return fetch_scene(
         cfg,
-        cfg.query_date_from,
-        cfg.query_date_to,
+        date_from,
+        date_to,
         cfg.query_scene_path,
         cfg.query_scene_meta_path,
         exclude_dates={map_date},
+        max_cloud=max_cloud,
+        prefer_snow=cfg.scene_prefers_snow,
     )

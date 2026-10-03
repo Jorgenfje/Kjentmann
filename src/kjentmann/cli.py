@@ -10,6 +10,7 @@ Steps, in order:
     refine       coarse search + point matching: position in metres (v0.3)
     diagnose     coarse search on blur / rotation / scale test images, one at a time
     navigate     search inside an uncertainty circle (2, 5, 10 km), no coarse step (v0.4)
+    seasons      spring / autumn / winter test images against the June map (v0.5)
 
 Shortcuts:
     all          fetch + tiles + map          (v0.1)
@@ -35,6 +36,7 @@ STEPS = [
     "refine",
     "diagnose",
     "navigate",
+    "seasons",
 ]
 SHORTCUTS = {
     "all": ["fetch", "tiles", "map"],
@@ -142,6 +144,11 @@ def run_step(step: str, cfg, args) -> None:
         from kjentmann.navigate import navigate
 
         navigate(cfg, make_matcher(args.matcher or cfg.matcher, cfg.max_keypoints, cfg.upscale))
+    elif step == "seasons":
+        from kjentmann.match import make_matcher
+        from kjentmann.seasons import seasons
+
+        seasons(cfg, make_matcher(args.matcher or cfg.matcher, cfg.max_keypoints, cfg.upscale))
 
 
 if __name__ == "__main__":

@@ -56,6 +56,20 @@ navigate:
   window_scale: 2.0      # windows 2 x tile at a stride of 1 tile
   early_stop_inliers: 40 # stop searching once a window is this confident
   map_radius_km: 5       # which radius gets a results map
+  season_radius_km: 5    # radius used by 'kjentmann seasons'
+
+# v0.5: test scenes from other seasons. The map stays the June scene.
+# Scenes with more than 5 % cloud inside the area (SCL layer) are skipped.
+scenes:
+  autumn:
+    date_from: "2025-09-15"
+    date_to: "2025-11-15"
+    max_cloud_cover: 30
+  winter:
+    date_from: "2025-02-01"   # Feb-Mar: snow, and the sun is high enough
+    date_to: "2025-03-31"
+    max_cloud_cover: 30
+    prefer_snow: true         # pick the snowiest clear scene
 
 # Test-image profiles. 'easy' = plain crops (same sensor, north-up, same scale).
 # 'realistic' adds what a camera under an aircraft would see: some heading
@@ -92,3 +106,18 @@ query_profiles:
     scale_max: 1.25
     blur_sigma: 0
     noise_std: 0
+  # v0.5 seasons: same camera conditions as 'realistic', other test scenes.
+  autumn:
+    scene: autumn
+    rotation_deg: 15
+    scale_min: 0.8
+    scale_max: 1.25
+    blur_sigma: 1.0
+    noise_std: 6
+  winter:
+    scene: winter
+    rotation_deg: 15
+    scale_min: 0.8
+    scale_max: 1.25
+    blur_sigma: 1.0
+    noise_std: 6

@@ -36,6 +36,9 @@ class Config:
     blur_sigma: float = 0.0
     noise_std: float = 0.0
     profiles: dict = field(default_factory=dict)
+    scene: str = "default"
+    scenes: dict = field(default_factory=dict)
+    season_radius_km: float = 5.0
     model_name: str = "vit_small_patch14_dinov2.lvd142m"
     model_image_size: int = 224
     model_batch_size: int = 32
@@ -81,12 +84,34 @@ class Config:
     @property
     def query_scene_path(self) -> Path:
         """GeoTIFF from another date, used to cut test images."""
-        return self.data_dir / "map" / f"{self.area_name}_query.tif"
+        return self.data_dir / "map" / f"{self.area_name}_query{self._scene_suffix}.tif"
 
     @property
     def query_scene_meta_path(self) -> Path:
         """Metadata for the query scene."""
-        return self.data_dir / "map" / f"{self.area_name}_query.json"
+        return self.data_dir / "map" / f"{self.area_name}_query{self._scene_suffix}.json"
+
+    @property
+    def _scene_suffix(self) -> str:
+        """The default test scene keeps the original file names."""
+        return "" if self.scene == "default" else f"_{self.scene}"
+
+    @property
+    def scene_prefers_snow(self) -> bool:
+        """Whether this profile's test scene should be the snowiest available."""
+        return bool(self.scenes.get(self.scene, {}).get("prefer_snow", False))
+
+    @property
+    def scene_dates(self) -> tuple[str, str, float]:
+        """(date_from, date_to, max_cloud_cover) for this profile's test scene."""
+        if self.scene == "default" or self.scene not in self.scenes:
+            return self.query_date_from, self.query_date_to, self.max_cloud_cover
+        sc = self.scenes[self.scene]
+        return (
+            str(sc["date_from"]),
+            str(sc["date_to"]),
+            float(sc.get("max_cloud_cover", self.max_cloud_cover)),
+        )
 
     @property
     def _suffix(self) -> str:
@@ -127,6 +152,7 @@ class Config:
             scale_max=float(p.get("scale_max", 1)),
             blur_sigma=float(p.get("blur_sigma", 0)),
             noise_std=float(p.get("noise_std", 0)),
+            scene=str(p.get("scene", "default")),
         )
 
 
@@ -166,6 +192,8 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         query_count=int(query.get("count", 200)),
         query_seed=int(query.get("seed", 42)),
         profiles=raw.get("query_profiles", {"easy": {}}),
+        scenes=raw.get("scenes", {}),
+        season_radius_km=float(raw.get("navigate", {}).get("season_radius_km", 5)),
         model_name=str(model.get("name", "vit_small_patch14_dinov2.lvd142m")),
         model_image_size=int(model.get("image_size", 224)),
         model_batch_size=int(model.get("batch_size", 32)),

@@ -118,7 +118,7 @@ def locate(
     return (*best, tried)
 
 
-def navigate(cfg: Config, matcher: Matcher) -> list[dict]:
+def navigate(cfg: Config, matcher: Matcher, prefix: str = "navigate") -> list[dict]:
     """Evaluate the uncertainty-circle search for each configured radius."""
     tiles = read_tiles(cfg.tiles_csv)
     queries = read_queries(cfg.queries_csv)
@@ -185,7 +185,7 @@ def navigate(cfg: Config, matcher: Matcher) -> list[dict]:
         seconds = (time.perf_counter() - t0) / max(len(queries), 1)
         s = summarize_radius(rows, cfg.min_inliers, radius_km, seconds)
         summaries.append(s)
-        write_rows(cfg, matcher.name, radius_km, rows)
+        write_rows(cfg, f"{prefix}_{matcher.name}", radius_km, rows)
         if radius_km == cfg.nav_map_radius_km:
             from kjentmann.viz import build_refine_map
 
@@ -193,10 +193,10 @@ def navigate(cfg: Config, matcher: Matcher) -> list[dict]:
                 cfg,
                 matcher.name,
                 rows,
-                filename=f"navigate_{matcher.name}_{radius_km:g}km_map.html",
+                filename=f"{prefix}_{matcher.name}_{radius_km:g}km_map.html",
             )
 
-    write_summary(cfg, matcher.name, summaries)
+    write_summary(cfg, f"{prefix}_{matcher.name}", summaries)
     return summaries
 
 
@@ -238,7 +238,7 @@ def results_table(summaries: list[dict], matcher: str, min_inliers: int) -> str:
 
 def write_rows(cfg: Config, name: str, radius_km: float, rows: list[dict]) -> None:
     cfg.results_dir.mkdir(parents=True, exist_ok=True)
-    path = cfg.results_dir / f"navigate_{name}_{radius_km:g}km_queries.csv"
+    path = cfg.results_dir / f"{name}_{radius_km:g}km_queries.csv"
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         writer.writeheader()
@@ -246,10 +246,8 @@ def write_rows(cfg: Config, name: str, radius_km: float, rows: list[dict]) -> No
 
 
 def write_summary(cfg: Config, name: str, summaries: list[dict]) -> None:
-    md = results_table(summaries, name, cfg.min_inliers) + "\n"
-    (cfg.results_dir / f"navigate_{name}.md").write_text(md, encoding="utf-8")
-    (cfg.results_dir / f"navigate_{name}.json").write_text(
-        json.dumps(summaries, indent=2), encoding="utf-8"
-    )
+    md = results_table(summaries, name.split("_")[-1], cfg.min_inliers) + "\n"
+    (cfg.results_dir / f"{name}.md").write_text(md, encoding="utf-8")
+    (cfg.results_dir / f"{name}.json").write_text(json.dumps(summaries, indent=2), encoding="utf-8")
     print()
     print(md)
