@@ -64,7 +64,9 @@ def test_prefer_snow_picks_snowiest_clear_scene(prepared, tmp_path, monkeypatch)
         _fake_item(tmp_path, "cloudy_snow", "2025-02-10", [(11, 0.6), (9, 0.3)]),
         _fake_item(tmp_path, "clear_snow", "2025-03-01", [(11, 0.7)]),
     ]
-    monkeypatch.setattr(fetch_mod, "search_scenes", lambda *a, **k: items)
+    monkeypatch.setattr(
+        fetch_mod, "search_scenes", lambda *a, **k: [fetch_mod.Scene([it]) for it in items]
+    )
     cfg = replace(prepared, size_km=5.0)
     out, meta_path = tmp_path / "w.tif", tmp_path / "w.json"
 
@@ -109,3 +111,78 @@ def test_scattered_dark_pixels_do_not_cluster_test_images():
     cols = [c for _, c in offs]
     assert min(cols) >= 97  # the real no-data strip is still avoided (1 % tolerance)
     assert max(cols) - min(cols) > 400  # spread out, not clustered
+
+
+def test_joins_two_scenes_when_the_area_lies_on_their_edge(prepared, tmp_path, monkeypatch):
+    """Two images in different UTM zones, each covering half the area."""
+    from pyproj import CRS, Transformer
+    from rasterio.warp import Resampling, reproject
+    from shapely.geometry import box, mapping
+    from shapely.ops import transform as shp_transform
+
+    cfg = replace(prepared, size_km=5.0)
+    crs = utm_crs_for(LAT, LON)
+    min_x, min_y, max_x, max_y = square_bounds(LAT, LON, 6, crs)  # a bit larger than the area
+    n = 600
+    tf = from_origin(min_x, max_y, 10, 10)
+    rng = np.random.default_rng(1)
+    world = rng.integers(1, 255, (3, n, n), dtype=np.uint8)
+    world = np.repeat(np.repeat(world[:, ::4, ::4], 4, 1), 4, 2)  # 40 m blocks survive warping
+
+    def item(name, cols, dst_crs):
+        part = np.zeros_like(world)
+        part[:, :, cols] = world[:, :, cols]
+        if dst_crs == crs:
+            data, dtf = part, tf
+        else:
+            data = np.zeros((3, n + 200, n + 200), np.uint8)
+            x0, y1 = Transformer.from_crs(crs, dst_crs, always_xy=True).transform(min_x, max_y)
+            dtf = from_origin(x0 - 1000, y1 + 1000, 10, 10)
+            reproject(
+                part,
+                data,
+                src_transform=tf,
+                src_crs=crs,
+                dst_transform=dtf,
+                dst_crs=dst_crs,
+                resampling=Resampling.nearest,
+                src_nodata=0,
+                dst_nodata=0,
+            )
+        _write(tmp_path / f"{name}.tif", data, dst_crs, dtf)
+        scl = np.full((1, data.shape[1] // 2, data.shape[2] // 2), 4, np.uint8)
+        _write(tmp_path / f"{name}_scl.tif", scl, dst_crs, from_origin(dtf.c, dtf.f, 20, 20))
+        x = min_x + cols.start * 10, min_x + cols.stop * 10
+        foot = shp_transform(
+            Transformer.from_crs(crs, "EPSG:4326", always_xy=True).transform,
+            box(x[0], min_y, x[1], max_y),
+        )
+        return SimpleNamespace(
+            id=name,
+            geometry=mapping(foot),
+            properties={"datetime": "2025-07-01T10:50:00Z", "eo:cloud_cover": 1.0},
+            assets={
+                "visual": SimpleNamespace(href=str(tmp_path / f"{name}.tif")),
+                "scl": SimpleNamespace(href=str(tmp_path / f"{name}_scl.tif")),
+            },
+        )
+
+    west = item("west", slice(0, 320), crs)
+    east = item("east", slice(280, n), CRS.from_epsg(32633))
+    area = box(*fetch_mod.lonlat_bbox(LAT, LON, cfg.size_km))
+    scenes = fetch_mod.group_scenes([west, east], area)
+    assert [sc.id for sc in scenes] == ["west+east"]
+
+    monkeypatch.setattr(fetch_mod, "search_scenes", lambda *a, **k: scenes)
+    out = tmp_path / "joined.tif"
+    meta = fetch_mod.fetch_scene(cfg, "a", "b", out, tmp_path / "joined.json")
+    assert meta["scene_id"] == "west+east"
+
+    with rasterio.open(out) as src:
+        got = src.read()
+        a_min_x, _, _, a_max_y = square_bounds(LAT, LON, cfg.size_km, src.crs)
+        assert src.crs == crs
+    assert (got.max(axis=0) > 0).mean() > 0.999  # no holes along the seam
+    r0, c0 = round((max_y - a_max_y) / 10), round((a_min_x - min_x) / 10)
+    truth = world[:, r0 : r0 + got.shape[1], c0 : c0 + got.shape[2]]
+    assert (np.abs(got.astype(int) - truth).max(axis=0) == 0).mean() > 0.95

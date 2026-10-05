@@ -9,17 +9,22 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import rasterio
 from pystac_client import Client
 from pystac_client.stac_api_io import StacApiIO
+from rasterio.enums import Resampling
+from rasterio.transform import from_origin
+from rasterio.vrt import WarpedVRT
 from rasterio.windows import from_bounds
 from shapely.geometry import box, shape
+from shapely.ops import unary_union
 
 from kjentmann.config import Config
-from kjentmann.geo import lonlat_bbox, square_bounds
+from kjentmann.geo import lonlat_bbox, square_bounds, utm_crs_for
 
 # Anonymous access to the public bucket, and faster remote reads.
 GDAL_ENV = {
@@ -36,6 +41,50 @@ STAC_TIMEOUT = (15, 45)  # seconds: connect, read
 STAC_RETRIES = 2
 
 
+@dataclass
+class Scene:
+    """One acquisition day. Usually one catalogue item; several when the area
+    lies on the edge between them and they must be joined."""
+
+    items: list
+
+    @property
+    def id(self) -> str:
+        return "+".join(it.id for it in self.items)
+
+    @property
+    def day(self) -> str:
+        return self.items[0].properties.get("datetime", "")[:10]
+
+    @property
+    def cloud(self) -> float:
+        return max(it.properties.get("eo:cloud_cover", 100) for it in self.items)
+
+    def hrefs(self, asset: str) -> list[str] | None:
+        if any(asset not in it.assets for it in self.items):
+            return None
+        return [it.assets[asset].href for it in self.items]
+
+
+def group_scenes(found: list, area) -> list[Scene]:
+    """Scenes that cover the area: single items first, then same-day joins."""
+    single = [Scene([it]) for it in found if shape(it.geometry).contains(area)]
+    by_day: dict[str, list] = {}
+    for it in found:
+        if shape(it.geometry).intersects(area):
+            by_day.setdefault(it.properties.get("datetime", "")[:10], []).append(it)
+    joined = []
+    for _day, items in by_day.items():
+        if len(items) < 2 or any(shape(it.geometry).contains(area) for it in items):
+            continue  # nothing to join, or already a single scene
+        if unary_union([shape(it.geometry) for it in items]).contains(area):
+            items.sort(key=lambda it: it.properties.get("eo:cloud_cover", 100))
+            joined.append(Scene(items))
+    single.sort(key=lambda sc: sc.cloud)
+    joined.sort(key=lambda sc: sc.cloud)
+    return single + joined
+
+
 class NoSceneError(SystemExit):
     """No usable scene in the date range (still a clean exit for the CLI)."""
 
@@ -43,7 +92,11 @@ class NoSceneError(SystemExit):
 def search_scenes(
     cfg: Config, date_from: str, date_to: str, max_cloud: float | None = None
 ) -> list:
-    """Find scenes that fully cover the area, least cloudy first."""
+    """Find scenes that fully cover the area, least cloudy first.
+
+    Single catalogue items come first. If the area lies on the edge between
+    items, items from the same day are joined into one scene.
+    """
     bbox = lonlat_bbox(cfg.center_lat, cfg.center_lon, cfg.size_km)
     client = Client.open(
         cfg.stac_url,
@@ -59,13 +112,14 @@ def search_scenes(
     )
     area = box(*bbox)
     found = list(search.items())
-    items = [it for it in found if shape(it.geometry).contains(area)]
+    scenes = group_scenes(found, area)
+    n_joined = sum(len(sc.items) > 1 for sc in scenes)
     print(
         f"  {date_from}..{date_to}, scene cloud < {search_cloud(cfg, max_cloud):g}%: "
-        f"{len(found)} scenes, {len(items)} cover the whole area"
+        f"{len(found)} scenes, {len(scenes) - n_joined} cover the whole area, "
+        f"{n_joined} more days by joining scenes"
     )
-    items.sort(key=lambda it: it.properties.get("eo:cloud_cover", 100))
-    return items
+    return scenes
 
 
 def read_area(cfg: Config, href: str) -> tuple[np.ndarray, dict]:
@@ -99,20 +153,79 @@ def search_cloud(cfg: Config, max_cloud: float | None) -> float:
     return cfg.max_cloud_cover if max_cloud is None else max_cloud
 
 
+def read_mosaic(cfg: Config, hrefs: list[str], pixel_m: float) -> tuple[np.ndarray, dict]:
+    """Join several images over the area on one grid (UTM of the area centre).
+
+    Each image is reprojected onto the grid; earlier images win where they
+    overlap, and later ones fill their no-data (0) pixels.
+    """
+    crs = utm_crs_for(cfg.center_lat, cfg.center_lon)
+    min_x, min_y, max_x, max_y = square_bounds(cfg.center_lat, cfg.center_lon, cfg.size_km, crs)
+    width = int(round((max_x - min_x) / pixel_m))
+    height = int(round((max_y - min_y) / pixel_m))
+    transform = from_origin(min_x, max_y, pixel_m, pixel_m)
+    out = None
+    with rasterio.Env(**GDAL_ENV):
+        for href in hrefs:
+            with (
+                rasterio.open(href) as src,
+                WarpedVRT(
+                    src,
+                    crs=crs,
+                    transform=transform,
+                    width=width,
+                    height=height,
+                    resampling=Resampling.nearest,
+                    nodata=0,
+                ) as vrt,
+            ):
+                data = vrt.read()
+                dtype, count = src.dtypes[0], src.count
+            if out is None:
+                out = data
+            else:
+                empty = out.max(axis=0) == 0
+                out[:, empty] = data[:, empty]
+    profile = {
+        "driver": "GTiff",
+        "dtype": dtype,
+        "count": count,
+        "crs": crs,
+        "transform": transform,
+        "width": width,
+        "height": height,
+        "compress": "deflate",
+        "nodata": 0,
+    }
+    if height >= 256 and width >= 256:
+        profile.update(tiled=True, blockxsize=256, blockysize=256)
+    return out, profile
+
+
+def read_scene(cfg: Config, scene: Scene, asset: str, pixel_m: float):
+    """Read one asset of a scene over the area; None if an item lacks it."""
+    hrefs = scene.hrefs(asset)
+    if hrefs is None:
+        return None
+    if len(hrefs) == 1:
+        return read_area(cfg, hrefs[0])
+    return read_mosaic(cfg, hrefs, pixel_m)
+
+
 # Sentinel-2 scene classification (SCL) codes.
 SCL_CLOUD = (3, 8, 9, 10)  # cloud shadow, cloud medium/high probability, thin cirrus
 SCL_SNOW = (11,)
 
 
-def scl_fractions(cfg: Config, item) -> tuple[float, float] | None:
+def scl_fractions(cfg: Config, scene: Scene) -> tuple[float, float] | None:
     """Share of cloud and snow inside the area, from the SCL layer (20 m).
 
     Returns None if the scene has no SCL asset.
     """
-    asset = item.assets.get("scl")
-    if asset is None:
+    read = read_scene(cfg, scene, "scl", 20.0)
+    if read is None:
         return None
-    scl, _ = read_area(cfg, asset.href)
+    scl, _ = read
     scl = scl[0]
     valid = scl > 0
     n = max(int(valid.sum()), 1)
@@ -166,11 +279,8 @@ def fetch_scene(
         os.environ.setdefault(key, value)
     exclude_dates = exclude_dates or set()
 
-    items = [
-        it
-        for it in search_scenes(cfg, date_from, date_to, max_cloud)
-        if it.properties.get("datetime", "")[:10] not in exclude_dates
-    ]
+    found = search_scenes(cfg, date_from, date_to, max_cloud)
+    items = [sc for sc in found if sc.day not in exclude_dates]
     if not items:
         raise NoSceneError(
             "No cloud-free scenes found. Try a longer date range or a higher max_cloud_cover."
@@ -181,20 +291,23 @@ def fetch_scene(
     chosen = None  # (snow, item, data, profile, cloud_area)
     checked = 0
     for item in items[:max_checks]:
-        cloud = item.properties.get("eo:cloud_cover")
-        day = item.properties.get("datetime", "")[:10]
+        cloud, day = item.cloud, item.day
         # The cloud mask (20 m) is small: check it before reading the image itself.
         fr = scl_fractions(cfg, item)
         cloud_area, snow = fr if fr is not None else (0.0, float("nan"))
         if cloud_area > max_area_cloud:
             print(f"  {day}: skipped, {cloud_area:.0%} cloud over the area")
             continue
-        data, profile = read_area(cfg, item.assets["visual"].href)
+        data, profile = read_scene(cfg, item, "visual", 10.0)
         frac = valid_fraction(data)
         if frac < cfg.min_valid_fraction:
             print(f"  {day}: skipped, only {frac:.1%} valid pixels")
             continue
-        print(f"  {day}: cloud {cloud_area:.0%}, snow {snow:.0%} in the area (scene {cloud:.1f}%)")
+        joined = f", {len(item.items)} scenes joined" if len(item.items) > 1 else ""
+        print(
+            f"  {day}: cloud {cloud_area:.0%}, snow {snow:.0%} in the area "
+            f"(scene {cloud:.1f}%{joined})"
+        )
         checked += 1
         if chosen is None or (prefer_snow and snow > chosen[0]):
             chosen = (snow, item, data, profile, cloud_area)
@@ -210,15 +323,15 @@ def fetch_scene(
         dst.write(data)
     meta = {
         "scene_id": item.id,
-        "datetime": item.properties.get("datetime"),
-        "cloud_cover": item.properties.get("eo:cloud_cover"),
+        "datetime": item.items[0].properties.get("datetime"),
+        "cloud_cover": item.cloud,
         "area_cloud_fraction": round(cloud_area, 3),
         "area_snow_fraction": None if snow != snow else round(snow, 3),
         "crs": str(profile["crs"]),
         "width": profile["width"],
         "height": profile["height"],
         "pixel_size_m": abs(profile["transform"].a),
-        "source": item.assets["visual"].href,
+        "source": " + ".join(item.hrefs("visual")),
     }
     out_meta.write_text(json.dumps(meta, indent=2), encoding="utf-8")
     print(f"Saved {out_tif}: {meta['datetime'][:10]}, snow {snow:.0%} in the area")

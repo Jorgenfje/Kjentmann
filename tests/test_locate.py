@@ -113,7 +113,9 @@ def test_ensure_map_relaxes_search_until_a_scene_is_found(prepared, tmp_path, mo
 
     def search(cfg, date_from, date_to, max_cloud=None):
         calls.append((date_from, max_cloud))
-        return [item] if date_from.startswith("2024") else []  # only last year has one
+        return (
+            [fetch_mod.Scene([item])] if date_from.startswith("2024") else []
+        )  # only last year has one
 
     monkeypatch.setattr(fetch_mod, "search_scenes", search)
     cfg = replace(area_config(prepared, V5_LAT, V5_LON, 1.0, 100), size_km=5.0)
