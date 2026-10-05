@@ -210,8 +210,12 @@ def locate_photo(
     altitude_m: float,
     radius_km: float | None = None,
     fov_deg: float | None = None,
+    progress=None,
 ) -> Fix:
-    """Find where a photo was taken. See the module docstring."""
+    """Find where a photo was taken. See the module docstring.
+
+    ``progress``, if given, is called with the share of the search done (0 to 1).
+    """
     import rasterio
 
     from kjentmann.evaluate import read_tiles
@@ -252,6 +256,7 @@ def locate_photo(
 
     best = None  # (inliers, v, win, angle, zoom, pa, pb)
     tried = 0
+    total = len(ZOOMS) * len(ROTATIONS) * len(cands)
     windows: dict = {}
     done = False
     # Altitude guess first (zoom 1), every heading; then the other altitudes.
@@ -272,6 +277,8 @@ def locate_photo(
                 s = transform_scale(v)
                 inl = v.inliers if 0.6 <= s <= 1.7 else 0
                 tried += 1
+                if progress and tried % 10 == 0:
+                    progress(tried / total)
                 if best is None or inl > best[0]:
                     best = (inl, v, win, angle, zoom, pa, pb)
                 if inl >= cfg.early_stop_inliers:

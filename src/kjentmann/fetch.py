@@ -14,6 +14,7 @@ from pathlib import Path
 import numpy as np
 import rasterio
 from pystac_client import Client
+from pystac_client.stac_api_io import StacApiIO
 from rasterio.windows import from_bounds
 from shapely.geometry import box, shape
 
@@ -25,7 +26,14 @@ GDAL_ENV = {
     "AWS_NO_SIGN_REQUEST": "YES",
     "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
     "CPL_VSIL_CURL_ALLOWED_EXTENSIONS": ".tif",
+    # Never wait forever on a slow server: time out and retry a few times.
+    "GDAL_HTTP_CONNECTTIMEOUT": "15",
+    "GDAL_HTTP_TIMEOUT": "60",
+    "GDAL_HTTP_MAX_RETRY": "3",
+    "GDAL_HTTP_RETRY_DELAY": "2",
 }
+STAC_TIMEOUT = (15, 45)  # seconds: connect, read
+STAC_RETRIES = 2
 
 
 def search_scenes(
@@ -33,7 +41,11 @@ def search_scenes(
 ) -> list:
     """Find scenes that fully cover the area, least cloudy first."""
     bbox = lonlat_bbox(cfg.center_lat, cfg.center_lon, cfg.size_km)
-    client = Client.open(cfg.stac_url)
+    client = Client.open(
+        cfg.stac_url,
+        stac_io=StacApiIO(max_retries=STAC_RETRIES),
+        timeout=STAC_TIMEOUT,  # must be given here: open() overwrites the stac_io timeout
+    )
     search = client.search(
         collections=[cfg.collection],
         bbox=bbox,

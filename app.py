@@ -103,10 +103,22 @@ with right:
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
             f.write(upload.getvalue())  # raw bytes: keeps EXIF (GPS, orientation)
             photo_path = Path(f.name)
-        with st.spinner("Searching. The first search in a new area downloads a map (~30 s)..."):
+        bar = st.progress(0.0, "Getting the satellite map. A new area takes up to a minute...")
+        try:
             fix = locate_photo(
-                cfg, matcher, photo_path, f"{lat},{lon}", float(altitude), float(radius)
+                cfg,
+                matcher,
+                photo_path,
+                f"{lat},{lon}",
+                float(altitude),
+                float(radius),
+                progress=lambda p: bar.progress(min(p, 1.0), f"Matching the photo... {p:.0%}"),
             )
+        except (Exception, SystemExit) as e:  # network trouble, no cloud-free scene, ...
+            bar.empty()
+            st.error(f"The search stopped: {e}. Try again, or pick a nearby place.")
+            st.stop()
+        bar.empty()
         out = result_map(fix, cfg, cfg.data_dir / "locate" / "app_map.html", (lat, lon), radius)
         state.result = (fix, out.read_text(encoding="utf-8"), upload.file_id)
 
