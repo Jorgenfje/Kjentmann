@@ -88,16 +88,14 @@ def sample_offsets(
                 continue
         out.append((r, c))
     if attempts:
-        print(
-            f"  {len(out)}/{attempts} tilfeldige plasseringer godkjent ({len(out) / attempts:.0%})"
-        )
+        print(f"  {len(out)}/{attempts} random placements accepted ({len(out) / attempts:.0%})")
     return out
 
 
 def build_queries(cfg: Config) -> list[Query]:
     """Cut test images from the query scene and write them with ground truth."""
     if not cfg.query_scene_path.exists():
-        raise SystemExit("Fant ikke testscenen. Kjør 'kjentmann fetch-query' først.")
+        raise SystemExit("Test scene not found. Run 'kjentmann fetch-query' first.")
     with rasterio.open(cfg.map_path) as ref:
         map_crs = ref.crs
     size = cfg.tile_size_px
@@ -135,7 +133,7 @@ def build_queries(cfg: Config) -> list[Query]:
         queries.append(q)
 
     write_queries(queries, cfg.queries_csv)
-    print(f"Lagret {len(queries)} testbilder i {cfg.queries_dir}")
+    print(f"Saved {len(queries)} test images to {cfg.queries_dir}")
     return queries
 
 

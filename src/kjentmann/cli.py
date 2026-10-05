@@ -1,5 +1,9 @@
 """Command line entry point: ``kjentmann <command>``.
 
+Locate a photo (anywhere in the world):
+    kjentmann locate photo.jpg --near "Gardermoen" --altitude 3000
+    kjentmann locate photo.jpg --near 59.58,11.16 --altitude 600 --radius 10
+
 Steps, in order:
     fetch        download the reference map (Sentinel-2)
     tiles        cut the map into tiles with known positions
@@ -11,6 +15,7 @@ Steps, in order:
     diagnose     coarse search on blur / rotation / scale test images, one at a time
     navigate     search inside an uncertainty circle (2, 5, 10 km), no coarse step (v0.4)
     seasons      spring / autumn / winter test images against the June map (v0.5)
+    spoof        detect spoofed GPS: statistics and a flight demo with a map
 
 Shortcuts:
     all          fetch + tiles + map          (v0.1)
@@ -37,6 +42,8 @@ STEPS = [
     "diagnose",
     "navigate",
     "seasons",
+    "spoof",
+    "locate",
 ]
 SHORTCUTS = {
     "all": ["fetch", "tiles", "map"],
@@ -51,9 +58,14 @@ def main(argv: list[str] | None = None) -> None:
         prog="kjentmann",
         description="GPS-free visual positioning",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__.split("Steps, in order:")[1],
+        epilog=__doc__.split("\n", 1)[1],
     )
     parser.add_argument("command", choices=STEPS + list(SHORTCUTS))
+    parser.add_argument("photo", nargs="?", help="photo for 'locate'")
+    parser.add_argument("--near", help="rough position for 'locate': place name or lat,lon")
+    parser.add_argument("--altitude", type=float, help="approximate altitude in metres")
+    parser.add_argument("--radius", type=float, help="search radius in km (default: config)")
+    parser.add_argument("--fov", type=float, help="camera field of view in degrees")
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument(
         "--embedders",
@@ -149,6 +161,21 @@ def run_step(step: str, cfg, args) -> None:
         from kjentmann.seasons import seasons
 
         seasons(cfg, make_matcher(args.matcher or cfg.matcher, cfg.max_keypoints, cfg.upscale))
+    elif step == "spoof":
+        from kjentmann.match import make_matcher
+        from kjentmann.spoof import spoof
+
+        spoof(cfg, make_matcher(args.matcher or cfg.matcher, cfg.max_keypoints, cfg.upscale))
+    elif step == "locate":
+        if not (args.photo and args.near and args.altitude):
+            raise SystemExit(
+                'Usage: kjentmann locate photo.jpg --near "place or lat,lon" --altitude 3000'
+            )
+        from kjentmann.locate import locate_cli
+        from kjentmann.match import make_matcher
+
+        matcher = make_matcher(args.matcher or cfg.matcher, cfg.max_keypoints, cfg.upscale)
+        locate_cli(cfg, matcher, args.photo, args.near, args.altitude, args.radius, args.fov)
 
 
 if __name__ == "__main__":

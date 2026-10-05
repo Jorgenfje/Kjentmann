@@ -96,3 +96,16 @@ def test_seasons_runs_every_season(prepared):
     assert all(r["answered"] > 0.5 for r in rows)
     table = (base.data_dir / "results" / "askim_seasons.md").read_text()
     assert "| Winter | 2025-03-01 | 42% |" in table
+
+
+def test_scattered_dark_pixels_do_not_cluster_test_images():
+    from kjentmann.queries import sample_offsets
+
+    rng = np.random.default_rng(1)
+    valid = rng.random((1000, 1000)) > 0.001  # 0.1 % isolated zero pixels
+    valid[:, :100] = False  # one real no-data strip
+    offs = sample_offsets(1000, 1000, 300, 50, seed=3, min_valid=valid)
+    assert len(offs) == 50
+    cols = [c for _, c in offs]
+    assert min(cols) >= 97  # the real no-data strip is still avoided (1 % tolerance)
+    assert max(cols) - min(cols) > 400  # spread out, not clustered

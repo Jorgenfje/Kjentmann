@@ -73,9 +73,9 @@ class DinoEmbedder:
             model_name, pretrained=pretrained, num_classes=0, img_size=image_size
         )
         self.model.eval().to(self.device)
-        print(f"DINOv2 kjører på: {self.device}")
+        print(f"DINOv2 running on: {self.device}")
         if self.device == "cpu":
-            print("  Advarsel: ingen GPU funnet. Se README om PyTorch med CUDA.")
+            print("  Warning: no GPU found. See the README on PyTorch with CUDA.")
         cfg = self.model.pretrained_cfg
         self.mean = np.array(cfg.get("mean", (0.485, 0.456, 0.406)), dtype=np.float32)
         self.std = np.array(cfg.get("std", (0.229, 0.224, 0.225)), dtype=np.float32)
@@ -110,4 +110,4 @@ def make_embedder(name: str, cfg, pretrained: bool = True) -> Embedder:
         return DinoEmbedder(
             cfg.model_name, cfg.model_image_size, cfg.model_batch_size, pretrained=pretrained
         )
-    raise ValueError(f"Ukjent embedder: {name}")
+    raise ValueError(f"Unknown embedder: {name}")

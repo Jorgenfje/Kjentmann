@@ -132,7 +132,7 @@ class LightGlueMatcher:
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.disk = KF.DISK.from_pretrained("depth").to(self.device).eval()
         self.lg = KF.LightGlueMatcher("disk").to(self.device).eval()
-        print(f"LightGlue kjører på: {self.device}")
+        print(f"LightGlue running on: {self.device}")
         self.max_keypoints = max_keypoints
         self.scale = scale
         self._cache: dict[int, tuple] = {}
@@ -193,4 +193,4 @@ def make_matcher(name: str, max_keypoints: int = 2048, scale: int = 2) -> Matche
         return SiftMatcher(max_keypoints=max_keypoints * 2, scale=scale)
     if name == "lightglue":
         return LightGlueMatcher(max_keypoints=max_keypoints, scale=scale)
-    raise ValueError(f"Ukjent matcher: {name}")
+    raise ValueError(f"Unknown matcher: {name}")

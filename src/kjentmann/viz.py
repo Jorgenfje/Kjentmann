@@ -27,7 +27,7 @@ def _base_map(cfg: Config) -> folium.Map:
     and CartoDB needs an API key, so Kartverket's open maps are used.
     """
     m = folium.Map(location=[cfg.center_lat, cfg.center_lon], zoom_start=12, tiles=None)
-    for layer, name in (("topo", "Kartverket topo"), ("topograatone", "Kartverket gråtone")):
+    for layer, name in (("topo", "Kartverket topo"), ("topograatone", "Kartverket greyscale")):
         folium.TileLayer(
             tiles=KARTVERKET_URL.format(layer=layer),
             attr='&copy; <a href="https://www.kartverket.no/">Kartverket</a>',
@@ -85,7 +85,7 @@ def build_map(cfg: Config) -> None:
     m = _base_map(cfg)
     _add_satellite(m, cfg)
 
-    grid = folium.FeatureGroup(name="Ruter", show=True)
+    grid = folium.FeatureGroup(name="Tiles", show=True)
     with cfg.tiles_csv.open(encoding="utf-8") as f:
         for row in csv.DictReader(f):
             x0, y0 = int(row["px_x"]), int(row["px_y"])
@@ -104,7 +104,7 @@ def build_map(cfg: Config) -> None:
     folium.LayerControl().add_to(m)
     out = cfg.data_dir / f"{cfg.area_name}_map.html"
     m.save(str(out))
-    print(f"Lagret kart: {out}  (åpne i nettleseren)")
+    print(f"Saved map: {out}  (open in a browser)")
 
 
 def build_results_map(cfg: Config, embedder_name: str, rows: list[dict]) -> None:
@@ -112,9 +112,9 @@ def build_results_map(cfg: Config, embedder_name: str, rows: list[dict]) -> None
     m = _base_map(cfg)
     _add_satellite(m, cfg, show=False)
 
-    hits = folium.FeatureGroup(name="Funnet (topp 1)")
-    near = folium.FeatureGroup(name=f"Blant topp {cfg.top_k}")
-    misses = folium.FeatureGroup(name="Bom")
+    hits = folium.FeatureGroup(name="Found first")
+    near = folium.FeatureGroup(name=f"In top {cfg.top_k}")
+    misses = folium.FeatureGroup(name="Missed")
     for r in rows:
         rank = r["rank_of_correct"]
         if rank == 1:
@@ -126,8 +126,8 @@ def build_results_map(cfg: Config, embedder_name: str, rows: list[dict]) -> None
         true_pt = [r["true_lat"], r["true_lon"]]
         guess_pt = [r["top1_lat"], r["top1_lon"]]
         tip = (
-            f"{r['query_id']}: rangering {rank or 'ikke funnet'}, "
-            f"feil {r['top1_error_m'] / 1000:.2f} km, score {r['top1_score']:.2f}"
+            f"{r['query_id']}: rank {rank or 'not found'}, "
+            f"error {r['top1_error_m'] / 1000:.2f} km, score {r['top1_score']:.2f}"
         )
         folium.CircleMarker(
             true_pt, radius=5, color=color, fill=True, fill_opacity=0.9, tooltip=tip
@@ -140,7 +140,7 @@ def build_results_map(cfg: Config, embedder_name: str, rows: list[dict]) -> None
     folium.LayerControl(collapsed=False).add_to(m)
     out = cfg.results_dir / f"{embedder_name}_map.html"
     m.save(str(out))
-    print(f"Lagret resultatkart: {out}")
+    print(f"Saved results map: {out}")
 
 
 def build_refine_map(
@@ -151,10 +151,10 @@ def build_refine_map(
     _add_satellite(m, cfg, show=False)
 
     groups = {
-        "good": folium.FeatureGroup(name="Under 100 m feil"),
-        "ok": folium.FeatureGroup(name="100–500 m feil"),
-        "bad": folium.FeatureGroup(name="Over 500 m feil"),
-        "unknown": folium.FeatureGroup(name="Vet ikke"),
+        "good": folium.FeatureGroup(name="Error under 100 m"),
+        "ok": folium.FeatureGroup(name="Error 100-500 m"),
+        "bad": folium.FeatureGroup(name="Error over 500 m"),
+        "unknown": folium.FeatureGroup(name="Unknown"),
     }
     colors = {"good": "#1a9850", "ok": "#fdae61", "bad": "#d73027", "unknown": "#888888"}
     for r in rows:
@@ -168,7 +168,7 @@ def build_refine_map(
         else:
             kind = "bad"
         true_pt = [r["true_lat"], r["true_lon"]]
-        err = f"{r['error_m']:.0f} m" if r["error_m"] != "" else "ingen posisjon"
+        err = f"{r['error_m']:.0f} m" if r["error_m"] != "" else "no position"
         tip = f"{r['query_id']}: {err}, {r['inliers']} inliers"
         folium.CircleMarker(
             true_pt, radius=5, color=colors[kind], fill=True, fill_opacity=0.9, tooltip=tip
@@ -183,4 +183,4 @@ def build_refine_map(
     folium.LayerControl(collapsed=False).add_to(m)
     out = cfg.results_dir / (filename or f"refine_{matcher_name}_map.html")
     m.save(str(out))
-    print(f"Lagret resultatkart: {out}")
+    print(f"Saved results map: {out}")

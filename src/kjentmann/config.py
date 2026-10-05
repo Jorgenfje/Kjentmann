@@ -39,6 +39,19 @@ class Config:
     scene: str = "default"
     scenes: dict = field(default_factory=dict)
     season_radius_km: float = 5.0
+    spoof_radius_km: float = 5.0
+    spoof_threshold_m: float = 100.0
+    gps_noise_m: float = 5.0
+    spoof_offsets_m: tuple = (50.0, 100.0, 250.0, 500.0, 1000.0, 2000.0)
+    flight_steps: int = 60
+    flight_step_m: float = 250.0
+    spoof_start_step: int = 20
+    drift_m_per_step: float = 25.0
+    track_radius_km: float = 2.0
+    locate_radius_km: float = 5.0
+    locate_fov_deg: float = 70.0
+    locate_date_from: str = "2025-05-01"
+    locate_date_to: str = "2025-09-30"
     model_name: str = "vit_small_patch14_dinov2.lvd142m"
     model_image_size: int = 224
     model_batch_size: int = 32
@@ -142,7 +155,7 @@ class Config:
     def with_profile(self, name: str) -> Config:
         """Copy of this config using a named test-image profile."""
         if name not in self.profiles:
-            raise ValueError(f"Ukjent profil '{name}'. Finnes: {', '.join(self.profiles)}")
+            raise ValueError(f"Unknown profile '{name}'. Available: {', '.join(self.profiles)}")
         p = self.profiles[name]
         return replace(
             self,
@@ -154,6 +167,23 @@ class Config:
             noise_std=float(p.get("noise_std", 0)),
             scene=str(p.get("scene", "default")),
         )
+
+
+def _spoof_settings(sp: dict) -> dict:
+    """Spoofing-detection settings from the 'spoof' section, with defaults."""
+    return {
+        "spoof_radius_km": float(sp.get("radius_km", 5)),
+        "spoof_threshold_m": float(sp.get("threshold_m", 100)),
+        "gps_noise_m": float(sp.get("gps_noise_m", 5)),
+        "spoof_offsets_m": tuple(
+            float(o) for o in sp.get("offsets_m", [50, 100, 250, 500, 1000, 2000])
+        ),
+        "flight_steps": int(sp.get("flight_steps", 60)),
+        "flight_step_m": float(sp.get("flight_step_m", 250)),
+        "spoof_start_step": int(sp.get("spoof_start_step", 20)),
+        "drift_m_per_step": float(sp.get("drift_m_per_step", 25)),
+        "track_radius_km": float(sp.get("track_radius_km", 2)),
+    }
 
 
 def load_config(path: str | Path = "config.yaml") -> Config:
@@ -194,6 +224,11 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         profiles=raw.get("query_profiles", {"easy": {}}),
         scenes=raw.get("scenes", {}),
         season_radius_km=float(raw.get("navigate", {}).get("season_radius_km", 5)),
+        **_spoof_settings(raw.get("spoof", {})),
+        locate_radius_km=float(raw.get("locate", {}).get("radius_km", 5)),
+        locate_fov_deg=float(raw.get("locate", {}).get("fov_deg", 70)),
+        locate_date_from=str(raw.get("locate", {}).get("date_from", "2025-05-01")),
+        locate_date_to=str(raw.get("locate", {}).get("date_to", "2025-09-30")),
         model_name=str(model.get("name", "vit_small_patch14_dinov2.lvd142m")),
         model_image_size=int(model.get("image_size", 224)),
         model_batch_size=int(model.get("batch_size", 32)),

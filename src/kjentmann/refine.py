@@ -141,7 +141,7 @@ def refine(cfg: Config, embedder: Embedder, matcher: Matcher) -> dict:
     win_px = int(round(size * cfg.window_scale))
     k = cfg.top_k
 
-    print(f"Grovsøk med {embedder.name} ...")
+    print(f"Coarse search with {embedder.name} ...")
     tile_vecs = embedder.embed(load_images(cfg.tiles_dir, [t.tile_id for t in tiles]))
     index = build_index(tile_vecs)
     q_images = load_images(cfg.queries_dir, [q.query_id for q in queries])
@@ -157,7 +157,7 @@ def refine(cfg: Config, embedder: Embedder, matcher: Matcher) -> dict:
             windows[ti] = window_around(image, *tile_px[ti], win_px)
         return windows[ti]
 
-    print(f"Finmatcher {len(queries)} testbilder mot topp {k} med {matcher.name} ...")
+    print(f"Fine matching {len(queries)} test images against top {k} with {matcher.name} ...")
     rows = []
     t0 = time.perf_counter()
     for qi, q in enumerate(queries):
@@ -203,7 +203,7 @@ def refine(cfg: Config, embedder: Embedder, matcher: Matcher) -> dict:
         if done % 10 == 0 or done == len(queries):
             spent = time.perf_counter() - t0
             left = spent / done * (len(queries) - done)
-            print(f"  {done}/{len(queries)} bilder, ca. {left / 60:.1f} min igjen", flush=True)
+            print(f"  {done}/{len(queries)} images, about {left / 60:.1f} min left", flush=True)
     ms_per_query = (time.perf_counter() - t0) / max(len(queries), 1) * 1000
 
     summary = summarize(rows, cfg.min_inliers, k)

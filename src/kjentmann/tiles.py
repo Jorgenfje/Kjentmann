@@ -95,13 +95,15 @@ def save_tiles(tiles: list[tuple[Tile, np.ndarray]], out_dir: Path, csv_path: Pa
 def build_tiles(cfg: Config) -> list[Tile]:
     """Read the saved map and write its tiles to disk."""
     if not cfg.map_path.exists():
-        raise SystemExit(f"Fant ikke {cfg.map_path}. Kjør 'kjentmann fetch' først.")
+        raise SystemExit(f"{cfg.map_path} not found. Run 'kjentmann fetch' first.")
     with rasterio.open(cfg.map_path) as src:
         image = src.read()
         tiles = make_tiles(image, src.transform, src.crs, cfg.tile_size_px, cfg.tile_overlap)
     if not tiles:
-        raise SystemExit("Kartet er mindre enn én rute. Øk area.size_km eller senk tiles.size_px.")
+        raise SystemExit(
+            "The map is smaller than one tile. Increase area.size_km or lower tiles.size_px."
+        )
     save_tiles(tiles, cfg.tiles_dir, cfg.tiles_csv)
     ground_km = cfg.tile_size_px * abs(src.transform.a) / 1000
-    print(f"Lagret {len(tiles)} ruter à {ground_km:.2f} km i {cfg.tiles_dir}")
+    print(f"Saved {len(tiles)} tiles of {ground_km:.2f} km to {cfg.tiles_dir}")
     return [t for t, _ in tiles]

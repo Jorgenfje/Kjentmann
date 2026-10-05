@@ -58,6 +58,25 @@ navigate:
   map_radius_km: 5       # which radius gets a results map
   season_radius_km: 5    # radius used by 'kjentmann seasons'
 
+# kjentmann locate: one photo, anywhere in the world.
+locate:
+  radius_km: 5           # search this far from the rough position
+  fov_deg: 70            # horizontal field of view of the camera (phones: 65-80)
+  date_from: "2025-05-01" # map season: summer by default
+  date_to: "2025-09-30"
+
+# Spoofing detection: compare GPS with the camera position.
+spoof:
+  radius_km: 5           # uncertainty circle for the camera fix
+  threshold_m: 100       # alarm when camera and GPS disagree by more than this
+  gps_noise_m: 5         # honest GPS error
+  offsets_m: [50, 100, 250, 500, 1000, 2000]
+  flight_steps: 60       # flight demo: images ...
+  flight_step_m: 250     # ... this far apart (15 km)
+  spoof_start_step: 20   # spoofing starts at this image ...
+  drift_m_per_step: 25   # ... and drags the GPS this far per image
+  track_radius_km: 2     # camera searches this close to its last fix
+
 # v0.5: test scenes from other seasons. The map stays the June scene.
 # Scenes with more than 5 % cloud inside the area (SCL layer) are skipped.
 scenes:

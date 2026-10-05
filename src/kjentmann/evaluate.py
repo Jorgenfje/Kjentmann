@@ -156,7 +156,7 @@ def evaluate(cfg: Config, embedders: list[Embedder]) -> list[dict]:
         (cfg.queries_csv, "queries"),
     ):
         if not path.exists():
-            raise SystemExit(f"Fant ikke {path}. Kjør 'kjentmann {step}' først.")
+            raise SystemExit(f"{path} not found. Run 'kjentmann {step}' first.")
     tiles = read_tiles(cfg.tiles_csv)
     queries = read_queries(cfg.queries_csv)
     with rasterio.open(cfg.map_path) as src:
@@ -165,7 +165,7 @@ def evaluate(cfg: Config, embedders: list[Embedder]) -> list[dict]:
     cfg.results_dir.mkdir(parents=True, exist_ok=True)
     summaries = []
     for emb in embedders:
-        print(f"Evaluerer {emb.name} ...")
+        print(f"Evaluating {emb.name} ...")
         summary, rows = evaluate_embedder(cfg, emb, tiles, queries, transform)
         summaries.append(summary)
         with (cfg.results_dir / f"{emb.name}_queries.csv").open(

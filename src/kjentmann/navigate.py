@@ -135,7 +135,7 @@ def navigate(cfg: Config, matcher: Matcher, prefix: str = "navigate") -> list[di
     summaries = []
     for radius_km in cfg.nav_radii_km:
         r_m = radius_km * 1000
-        print(f"\nRadius {radius_km:g} km: {len(queries)} testbilder ...")
+        print(f"\nRadius {radius_km:g} km: {len(queries)} test images ...")
         rows = []
         t0 = time.perf_counter()
         for qi, q in enumerate(queries):
@@ -181,7 +181,7 @@ def navigate(cfg: Config, matcher: Matcher, prefix: str = "navigate") -> list[di
             if done % 20 == 0 or done == len(queries):
                 spent = time.perf_counter() - t0
                 left = spent / done * (len(queries) - done)
-                print(f"  {done}/{len(queries)} bilder, ca. {left / 60:.1f} min igjen", flush=True)
+                print(f"  {done}/{len(queries)} images, about {left / 60:.1f} min left", flush=True)
         seconds = (time.perf_counter() - t0) / max(len(queries), 1)
         s = summarize_radius(rows, cfg.min_inliers, radius_km, seconds)
         summaries.append(s)
@@ -251,3 +251,47 @@ def write_summary(cfg: Config, name: str, summaries: list[dict]) -> None:
     (cfg.results_dir / f"{name}.json").write_text(json.dumps(summaries, indent=2), encoding="utf-8")
     print()
     print(md)
+
+
+class VisualFixer:
+    """Reusable 'where am I?' for one map: image + prior + radius -> position.
+
+    Keeps the map, its search windows and their keypoints in memory, so many
+    images (a test set, or a flight) can be located without reloading.
+    """
+
+    def __init__(self, cfg: Config, matcher: Matcher) -> None:
+        self.cfg = cfg
+        self.matcher = matcher
+        tiles = read_tiles(cfg.tiles_csv)
+        with rasterio.open(cfg.map_path) as src:
+            self.image = src.read()
+            self.map_tf, self.map_crs = src.transform, src.crs
+        self.pixel_m = abs(self.map_tf.a)
+        self.win_px = int(round(cfg.tile_size_px * cfg.nav_window_scale))
+        self.candidates = search_windows(cfg, tiles, self.map_tf)
+        self.windows: dict = {}
+
+    def fix(
+        self, img: np.ndarray, key, prior_xy: tuple[float, float], radius_m: float
+    ) -> tuple[float | None, float | None, int]:
+        """Position (x, y) in the map CRS and its inliers, or (None, None, inliers)."""
+        inliers, v, win, _ = locate(
+            self.cfg,
+            self.matcher,
+            img,
+            key,
+            prior_xy,
+            radius_m,
+            self.candidates,
+            self.image,
+            self.win_px,
+            self.pixel_m,
+            self.windows,
+        )
+        if v is None or inliers < self.cfg.min_inliers:
+            return None, None, inliers
+        h, w = img.shape[:2]
+        pt = v.map_point(w / 2, h / 2)
+        mx, my = apply_transform(self.map_tf, win.x0 + pt[0], win.y0 + pt[1])
+        return mx, my, inliers

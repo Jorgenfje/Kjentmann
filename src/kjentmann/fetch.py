@@ -146,10 +146,10 @@ def fetch_scene(
     ]
     if not items:
         raise SystemExit(
-            "Fant ingen skyfrie bilder. Prøv et lengre datointervall eller høyere max_cloud_cover."
+            "No cloud-free scenes found. Try a longer date range or a higher max_cloud_cover."
         )
-    order = "mest snø" if prefer_snow else "minst skyer"
-    print(f"Fant {len(items)} kandidater. Velger gyldig bilde med {order}.")
+    order = "most snow" if prefer_snow else "least cloud"
+    print(f"{len(items)} candidates. Choosing the valid scene with {order}.")
 
     chosen = None  # (snow, item, data, profile, cloud_area)
     checked = 0
@@ -159,14 +159,14 @@ def fetch_scene(
         data, profile = read_area(cfg, item.assets["visual"].href)
         frac = valid_fraction(data)
         if frac < cfg.min_valid_fraction:
-            print(f"  {day}: hopper over, bare {frac:.1%} gyldige piksler")
+            print(f"  {day}: skipped, only {frac:.1%} valid pixels")
             continue
         fr = scl_fractions(cfg, item)
         cloud_area, snow = fr if fr is not None else (0.0, float("nan"))
         if cloud_area > max_area_cloud:
-            print(f"  {day}: hopper over, {cloud_area:.0%} skyer over området")
+            print(f"  {day}: skipped, {cloud_area:.0%} cloud over the area")
             continue
-        print(f"  {day}: skyer {cloud_area:.0%}, snø {snow:.0%} i området (scene {cloud:.1f} %)")
+        print(f"  {day}: cloud {cloud_area:.0%}, snow {snow:.0%} in the area (scene {cloud:.1f}%)")
         checked += 1
         if chosen is None or (prefer_snow and snow > chosen[0]):
             chosen = (snow, item, data, profile, cloud_area)
@@ -174,7 +174,7 @@ def fetch_scene(
             break
 
     if chosen is None:
-        raise SystemExit("Ingen gyldige bilder i perioden. Prøv et annet datointervall.")
+        raise SystemExit("No valid scenes in the date range. Try another range.")
 
     snow, item, data, profile, cloud_area = chosen
     out_tif.parent.mkdir(parents=True, exist_ok=True)
@@ -193,7 +193,7 @@ def fetch_scene(
         "source": item.assets["visual"].href,
     }
     out_meta.write_text(json.dumps(meta, indent=2), encoding="utf-8")
-    print(f"Lagret {out_tif}: {meta['datetime'][:10]}, snø {snow:.0%} i området")
+    print(f"Saved {out_tif}: {meta['datetime'][:10]}, snow {snow:.0%} in the area")
     return meta
 
 
@@ -205,10 +205,10 @@ def fetch(cfg: Config) -> dict:
 def fetch_query_scene(cfg: Config) -> dict:
     """Download a scene from another date than the map, for test images."""
     if not cfg.map_meta_path.exists():
-        raise SystemExit("Kjør 'kjentmann fetch' først, så vi vet hvilken dato kartet er fra.")
+        raise SystemExit("Run 'kjentmann fetch' first, so the map date is known.")
     map_date = json.loads(cfg.map_meta_path.read_text(encoding="utf-8"))["datetime"][:10]
     date_from, date_to, max_cloud = cfg.scene_dates
-    print(f"Kartet er fra {map_date}. Henter testbilde ({cfg.scene}) {date_from} til {date_to}.")
+    print(f"Map is from {map_date}. Fetching test scene ({cfg.scene}) {date_from} to {date_to}.")
     return fetch_scene(
         cfg,
         date_from,

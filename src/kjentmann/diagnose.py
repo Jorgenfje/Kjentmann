@@ -50,5 +50,5 @@ def diagnose(base: Config, embedder: Embedder) -> list[dict]:
     out = base.data_dir / "results" / f"{base.area_name}_diagnose.md"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(f"Coarse search: {embedder.name}\n\n{table}\n", encoding="utf-8")
-    print(f"\n{table}\n\nLagret: {out}")
+    print(f"\n{table}\n\nSaved: {out}")
     return rows

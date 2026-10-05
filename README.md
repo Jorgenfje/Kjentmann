@@ -34,12 +34,21 @@ No answer was wrong. When unsure, the system says "unknown" instead of guessing.
 - Camera tilt is not simulated, and the uncertainty circle always contains the true position.
 - 10 m pixels suit images taken from a few kilometres up, not low drone images.
 
-## Quick start
+## Try it on your own photo
 
 ```bash
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
-pip install -e ".[dev]"
+pip install -e ".[dev,app]"
 
+kjentmann locate photo.jpg --near "Gardermoen" --altitude 3000
+streamlit run app.py                   # web page: upload a photo, see your position
+```
+
+Works anywhere in the world: the satellite map around the rough position is downloaded on first use. If the photo has GPS coordinates in its file, the error is shown.
+
+## Reproduce the evaluation
+
+```bash
 kjentmann all                          # map and tiles
 kjentmann v02                          # test images from another date
 kjentmann queries --profile realistic  # add camera conditions
@@ -53,7 +62,9 @@ Settings are in `config.yaml`. Results and interactive maps are written to `data
 ## Roadmap
 
 - [x] Map, coarse search, point matching, uncertainty-circle search, season test
-- [ ] Detect spoofed GPS
+- [x] Detect spoofed GPS (`kjentmann spoof`)
+- [x] Locate a single photo anywhere in the world, with a web page
+- [ ] Test on real photos from aircraft
 - [ ] Online demo (Docker, Azure)
 - [ ] Demo with real skydiving footage
 

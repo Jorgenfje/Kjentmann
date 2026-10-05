@@ -52,7 +52,7 @@ def seasons(base: Config, matcher: Matcher) -> list[dict]:
     out = base.data_dir / "results" / f"{base.area_name}_seasons.md"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(table + "\n", encoding="utf-8")
-    print(f"\n{table}\n\nLagret: {out}")
+    print(f"\n{table}\n\nSaved: {out}")
     return rows
 
 
