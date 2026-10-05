@@ -36,6 +36,10 @@ STAC_TIMEOUT = (15, 45)  # seconds: connect, read
 STAC_RETRIES = 2
 
 
+class NoSceneError(SystemExit):
+    """No usable scene in the date range (still a clean exit for the CLI)."""
+
+
 def search_scenes(
     cfg: Config, date_from: str, date_to: str, max_cloud: float | None = None
 ) -> list:
@@ -50,11 +54,16 @@ def search_scenes(
         collections=[cfg.collection],
         bbox=bbox,
         datetime=f"{date_from}/{date_to}",
-        query={"eo:cloud_cover": {"lt": cfg.max_cloud_cover if max_cloud is None else max_cloud}},
+        query={"eo:cloud_cover": {"lt": search_cloud(cfg, max_cloud)}},
         max_items=300,
     )
     area = box(*bbox)
-    items = [it for it in search.items() if shape(it.geometry).contains(area)]
+    found = list(search.items())
+    items = [it for it in found if shape(it.geometry).contains(area)]
+    print(
+        f"  {date_from}..{date_to}, scene cloud < {search_cloud(cfg, max_cloud):g}%: "
+        f"{len(found)} scenes, {len(items)} cover the whole area"
+    )
     items.sort(key=lambda it: it.properties.get("eo:cloud_cover", 100))
     return items
 
@@ -84,6 +93,10 @@ def read_area(cfg: Config, href: str) -> tuple[np.ndarray, dict]:
         if height >= 256 and width >= 256:
             profile.update(tiled=True, blockxsize=256, blockysize=256)
     return data, profile
+
+
+def search_cloud(cfg: Config, max_cloud: float | None) -> float:
+    return cfg.max_cloud_cover if max_cloud is None else max_cloud
 
 
 # Sentinel-2 scene classification (SCL) codes.
@@ -124,6 +137,7 @@ def fetch_scene(
     prefer_snow: bool = False,
     max_area_cloud: float = 0.05,
     max_candidates: int = 8,
+    max_checks: int = 15,
 ) -> dict:
     """Download the best valid scene in a date range.
 
@@ -143,6 +157,7 @@ def fetch_scene(
         prefer_snow: Pick the snowiest valid scene instead of the clearest.
         max_area_cloud: Largest accepted cloud share inside the area (0 to 1).
         max_candidates: How many valid scenes to compare when preferring snow.
+        max_checks: How many scenes to inspect at most before giving up.
 
     Returns:
         The metadata that was written.
@@ -157,7 +172,7 @@ def fetch_scene(
         if it.properties.get("datetime", "")[:10] not in exclude_dates
     ]
     if not items:
-        raise SystemExit(
+        raise NoSceneError(
             "No cloud-free scenes found. Try a longer date range or a higher max_cloud_cover."
         )
     order = "most snow" if prefer_snow else "least cloud"
@@ -165,18 +180,19 @@ def fetch_scene(
 
     chosen = None  # (snow, item, data, profile, cloud_area)
     checked = 0
-    for item in items:
+    for item in items[:max_checks]:
         cloud = item.properties.get("eo:cloud_cover")
         day = item.properties.get("datetime", "")[:10]
-        data, profile = read_area(cfg, item.assets["visual"].href)
-        frac = valid_fraction(data)
-        if frac < cfg.min_valid_fraction:
-            print(f"  {day}: skipped, only {frac:.1%} valid pixels")
-            continue
+        # The cloud mask (20 m) is small: check it before reading the image itself.
         fr = scl_fractions(cfg, item)
         cloud_area, snow = fr if fr is not None else (0.0, float("nan"))
         if cloud_area > max_area_cloud:
             print(f"  {day}: skipped, {cloud_area:.0%} cloud over the area")
+            continue
+        data, profile = read_area(cfg, item.assets["visual"].href)
+        frac = valid_fraction(data)
+        if frac < cfg.min_valid_fraction:
+            print(f"  {day}: skipped, only {frac:.1%} valid pixels")
             continue
         print(f"  {day}: cloud {cloud_area:.0%}, snow {snow:.0%} in the area (scene {cloud:.1f}%)")
         checked += 1
@@ -186,7 +202,7 @@ def fetch_scene(
             break
 
     if chosen is None:
-        raise SystemExit("No valid scenes in the date range. Try another range.")
+        raise NoSceneError("No valid scenes in the date range. Try another range.")
 
     snow, item, data, profile, cloud_area = chosen
     out_tif.parent.mkdir(parents=True, exist_ok=True)

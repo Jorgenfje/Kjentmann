@@ -98,3 +98,26 @@ def test_locate_synthetic_phone_photo(tmp_path):
     fix2 = locate_photo(base, matcher, path2, f"{LAT},{LON}", altitude, radius_km=2.0)
     assert fix2.found
     assert fix2.error_m < 60
+
+
+def test_ensure_map_relaxes_search_until_a_scene_is_found(prepared, tmp_path, monkeypatch):
+    from test_v05 import LAT as V5_LAT
+    from test_v05 import LON as V5_LON
+    from test_v05 import _fake_item
+
+    import kjentmann.fetch as fetch_mod
+    from kjentmann.locate import ensure_map
+
+    item = _fake_item(tmp_path, "clear", "2024-07-01", [])
+    calls = []
+
+    def search(cfg, date_from, date_to, max_cloud=None):
+        calls.append((date_from, max_cloud))
+        return [item] if date_from.startswith("2024") else []  # only last year has one
+
+    monkeypatch.setattr(fetch_mod, "search_scenes", search)
+    cfg = replace(area_config(prepared, V5_LAT, V5_LON, 1.0, 100), size_km=5.0)
+    ensure_map(cfg)
+    assert cfg.map_path.exists()
+    assert [c[1] for c in calls] == [cfg.max_cloud_cover, 60.0, 60.0]
+    assert calls[-1][0].startswith("2024")

@@ -186,13 +186,40 @@ def area_config(base: Config, lat: float, lon: float, radius_km: float, photo_px
     )
 
 
+def _year_back(date: str, years: int) -> str:
+    return f"{int(date[:4]) - years}{date[4:]}"
+
+
+def map_attempts(cfg: Config) -> list[tuple[str, str, float]]:
+    """(date_from, date_to, scene cloud limit) to try, strictest first.
+
+    The scene cloud figure covers a whole 110 km scene, so a cloudy coast can
+    hide a clear area. The cloud mask then checks the area itself.
+    """
+    out = [(cfg.date_from, cfg.date_to, cfg.max_cloud_cover)]
+    for years in (0, 1, 2):
+        out.append((_year_back(cfg.date_from, years), _year_back(cfg.date_to, years), 60.0))
+    return out
+
+
 def ensure_map(cfg: Config) -> None:
     """Download the map and cut tiles, unless already cached."""
     if not cfg.map_path.exists():
-        from kjentmann.fetch import fetch
+        from kjentmann.fetch import NoSceneError, fetch_scene
 
         print(f"Downloading satellite map ({cfg.size_km:g} × {cfg.size_km:g} km) ...")
-        fetch(cfg)
+        for date_from, date_to, max_cloud in map_attempts(cfg):
+            try:
+                fetch_scene(
+                    cfg, date_from, date_to, cfg.map_path, cfg.map_meta_path, max_cloud=max_cloud
+                )
+                break
+            except NoSceneError:
+                continue
+        else:
+            raise NoSceneError(
+                "No cloud-free satellite image of this area in the last three summers."
+            )
     if not cfg.tiles_csv.exists():
         from kjentmann.tiles import build_tiles
 
