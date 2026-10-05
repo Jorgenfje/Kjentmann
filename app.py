@@ -49,6 +49,7 @@ def search_places(name: str):
 cfg, matcher = setup()
 state = st.session_state
 state.setdefault("pos", None)  # (lat, lon, label)
+state.setdefault("result", None)  # (fix, map html), kept until the next search
 
 left, right = st.columns([1, 2])
 
@@ -60,6 +61,8 @@ with left:
     )
     if upload:
         st.image(upload, width="stretch")
+    if state.result and upload and upload.file_id != state.result[2]:
+        state.result = None  # a new photo makes the old answer meaningless
 
     st.subheader("2. Roughly where are you?")
     name = st.text_input("Place name", placeholder="e.g. Askim, Norway  or  59.58, 11.16")
@@ -104,14 +107,23 @@ with right:
             fix = locate_photo(
                 cfg, matcher, photo_path, f"{lat},{lon}", float(altitude), float(radius)
             )
+        out = result_map(fix, cfg, cfg.data_dir / "locate" / "app_map.html", (lat, lon), radius)
+        state.result = (fix, out.read_text(encoding="utf-8"), upload.file_id)
+
+    if state.result:
+        fix, html, _ = state.result
         if fix.found:
             st.success(f"Found: {fix.lat:.5f}, {fix.lon:.5f}  (± {fix.accuracy_m:.0f} m)")
         else:
             st.warning("Position not found. The dashed circle is only the area that was searched.")
         st.text(describe(fix))
-        out = result_map(fix, cfg, cfg.data_dir / "locate" / "app_map.html", (lat, lon), radius)
-        components.html(out.read_text(encoding="utf-8"), height=620)
-        st.button("New search")
+        if hasattr(st, "iframe"):  # Streamlit 1.5x+
+            st.iframe(html, height=620)
+        else:
+            components.html(html, height=620)
+        if st.button("New search"):
+            state.result = None
+            st.rerun()
     else:
         center = state.pos[:2] if state.pos else (60.0, 10.0)
         m = folium.Map(location=center, zoom_start=11 if state.pos else 5)
