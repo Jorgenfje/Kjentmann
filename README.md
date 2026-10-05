@@ -46,26 +46,4 @@ streamlit run app.py                   # web page: upload a photo, see your posi
 
 Works anywhere in the world: the satellite map around the rough position is downloaded on first use. If the photo has GPS coordinates in its file, the error is shown.
 
-## Reproduce the evaluation
-
-```bash
-kjentmann all                          # map and tiles
-kjentmann v02                          # test images from another date
-kjentmann queries --profile realistic  # add camera conditions
-kjentmann navigate --profile realistic # main result, radii 2/5/10 km
-kjentmann seasons                      # spring, autumn, winter
-pytest                                 # offline tests
-```
-
-Settings are in `config.yaml`. Results and interactive maps are written to `data/results/`.
-
-## Roadmap
-
-- [x] Map, coarse search, point matching, uncertainty-circle search, season test
-- [x] Detect spoofed GPS (`kjentmann spoof`)
-- [x] Locate a single photo anywhere in the world, with a web page
-- [ ] Test on real photos from aircraft
-- [ ] Online demo (Docker, Azure)
-- [ ] Demo with real skydiving footage
-
 MIT licence. Contains modified Copernicus Sentinel data. Base maps: Kartverket.
